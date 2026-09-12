@@ -1,0 +1,17 @@
+# OS
+.DS_Store
+
+# Python
+backend/.venv/
+backend/**/__pycache__/
+backend/*.egg-info/
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/.ruff_cache/
+
+# Environment
+backend/.env
+.env
+
+# Node (frontend/.gitignore also covers this, kept here for repo-root tooling)
+frontend/node_modules/
