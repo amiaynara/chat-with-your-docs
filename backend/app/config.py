@@ -31,5 +31,7 @@ class Settings(BaseSettings):
 
     session_cookie_name: str = "session_id"
 
+    retrieval_top_k: int = 5
+
 
 settings = Settings()

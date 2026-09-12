@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { type Document, listDocuments } from './api/documents'
+import { Chat } from './components/Chat'
 import { DocumentList } from './components/DocumentList'
 import { UploadForm } from './components/UploadForm'
 
@@ -26,6 +27,11 @@ function App() {
         <h2 className="text-sm font-medium text-neutral-600">Documents</h2>
         <UploadForm onUploaded={refresh} />
         <DocumentList documents={documents} />
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium text-neutral-600">Ask a question</h2>
+        <Chat />
       </section>
     </main>
   )
