@@ -44,22 +44,40 @@ class S3ObjectStorage:
     client works against either without code changes.
     """
 
-    def __init__(self, endpoint_url: str, access_key: str, secret_key: str, bucket: str) -> None:
+    def __init__(
+        self,
+        endpoint_url: str,
+        access_key: str,
+        secret_key: str,
+        bucket: str,
+        timeout_seconds: float = 30.0,
+    ) -> None:
         self._bucket = bucket
         self._client = boto3.client(
             "s3",
             endpoint_url=endpoint_url,
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
-            config=Config(signature_version="s3v4", retries={"max_attempts": 0}),
+            config=Config(
+                signature_version="s3v4",
+                retries={"max_attempts": 0},
+                connect_timeout=timeout_seconds,
+                read_timeout=timeout_seconds,
+            ),
         )
         self._ensure_bucket()
 
+    @with_provider_retry
     def _ensure_bucket(self) -> None:
         try:
             self._client.head_bucket(Bucket=self._bucket)
-        except ClientError:
-            self._client.create_bucket(Bucket=self._bucket)
+        except EndpointConnectionError as exc:
+            raise TransientProviderError(str(exc)) from exc
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "404":
+                self._client.create_bucket(Bucket=self._bucket)
+                return
+            raise _classify_client_error(exc) from exc
 
     @with_provider_retry
     def put(self, key: str, data: bytes) -> str:

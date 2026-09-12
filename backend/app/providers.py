@@ -16,6 +16,7 @@ def get_object_storage() -> ObjectStorage:
         access_key=settings.object_storage_access_key,
         secret_key=settings.object_storage_secret_key,
         bucket=settings.object_storage_bucket,
+        timeout_seconds=settings.provider_timeout_seconds,
     )
 
 
@@ -24,8 +25,12 @@ def get_embedding_provider() -> EmbeddingProvider:
         api_key=settings.openai_api_key,
         model=settings.embedding_model,
         model_version=settings.embedding_model_version,
+        timeout_seconds=settings.provider_timeout_seconds,
     )
 
 
 def get_llm_provider() -> LLMProvider:
-    return AnthropicLLMProvider(api_key=settings.anthropic_api_key)
+    return AnthropicLLMProvider(
+        api_key=settings.anthropic_api_key,
+        timeout_seconds=settings.provider_timeout_seconds,
+    )

@@ -55,15 +55,12 @@ class ChunkRepository:
         self._db.add_all(chunks)
         self._db.commit()
 
-    def search_ready(
-        self, query_embedding: list[float], limit: int, document_ids: list[uuid.UUID] | None = None
-    ) -> list[Chunk]:
+    def search_ready(self, query_embedding: list[float], limit: int) -> list[Chunk]:
         stmt = (
             select(Chunk)
             .join(Document, Chunk.document_id == Document.id)
             .where(Document.status == DocumentStatus.READY)
+            .order_by(Chunk.embedding.cosine_distance(query_embedding))
+            .limit(limit)
         )
-        if document_ids:
-            stmt = stmt.where(Document.id.in_(document_ids))
-        stmt = stmt.order_by(Chunk.embedding.cosine_distance(query_embedding)).limit(limit)
         return list(self._db.scalars(stmt).all())

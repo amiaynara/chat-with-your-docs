@@ -14,11 +14,10 @@ class Settings(BaseSettings):
     object_storage_secret_key: str = "minioadmin"
     object_storage_bucket: str = "documents"
 
-    llm_provider: str = "anthropic"
     anthropic_api_key: str = ""
     openai_api_key: str = ""
+    provider_timeout_seconds: float = 30.0
 
-    embedding_provider: str = "openai"
     embedding_model: str = "text-embedding-3-small"
     embedding_model_version: str = "1"
     embedding_dimensions: int = 1536
@@ -30,6 +29,11 @@ class Settings(BaseSettings):
     chunk_overlap_ratio: float = 0.1
 
     session_cookie_name: str = "session_id"
+    # False only in the test environment (plain-http TestClient) — see
+    # tests/conftest.py. Real browsers treat localhost as a secure context and
+    # still send Secure cookies over http://localhost, but a bare httpx test
+    # client talking to "testserver" does not.
+    session_cookie_secure: bool = True
 
     retrieval_top_k: int = 5
 

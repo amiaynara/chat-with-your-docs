@@ -19,11 +19,13 @@ def test_answer_with_no_documents_does_not_fabricate_information(client):
 
 def test_llm_provider_failure_returns_a_clean_error_not_a_bare_500(client, fake_llm_provider):
     def _boom(*args, **kwargs):
-        raise RuntimeError("provider misconfigured")
+        raise RuntimeError("provider misconfigured: leaked internal detail")
 
     fake_llm_provider.generate = _boom
 
     response = client.post("/chat/messages", json={"question": "anything?"})
 
     assert response.status_code == 502
-    assert "provider misconfigured" in response.json()["detail"]
+    detail = response.json()["detail"]
+    assert "try again" in detail.lower()
+    assert "leaked internal detail" not in detail

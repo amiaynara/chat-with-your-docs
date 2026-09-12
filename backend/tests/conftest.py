@@ -7,6 +7,7 @@ from app import (
     providers,
 )
 from app.celery_app import celery_app
+from app.config import settings
 from app.db import Base, engine
 from app.main import app
 from tests.fakes.embeddings import FakeEmbeddingProvider
@@ -15,6 +16,11 @@ from tests.fakes.storage import FakeObjectStorage
 
 celery_app.conf.task_always_eager = True
 celery_app.conf.task_eager_propagates = True
+
+# TestClient talks plain http to "testserver" — a Secure cookie would never be
+# stored/resent by httpx's cookie jar (unlike a real browser, which treats
+# localhost as a secure context). Real dev/prod keep secure=True.
+settings.session_cookie_secure = False
 
 
 @pytest.fixture(scope="session", autouse=True)

@@ -3,7 +3,7 @@ from typing import Literal, Protocol
 
 import anthropic
 
-from app.adapters.retry import PermanentProviderError, TransientProviderError, with_provider_retry
+from app.adapters.retry import classify_provider_call, with_provider_retry
 
 
 @dataclass
@@ -26,29 +26,28 @@ class LLMProvider(Protocol):
 
 
 class AnthropicLLMProvider:
-    def __init__(self, api_key: str, model: str = "claude-sonnet-5") -> None:
+    def __init__(
+        self, api_key: str, model: str = "claude-sonnet-5", timeout_seconds: float = 30.0
+    ) -> None:
         self._model = model
-        self._client = anthropic.Anthropic(api_key=api_key)
+        self._client = anthropic.Anthropic(api_key=api_key, timeout=timeout_seconds)
 
     @with_provider_retry
     def generate(self, system: str, messages: list[Message]) -> AnswerResult:
-        try:
-            response = self._client.messages.create(
+        response = classify_provider_call(
+            lambda: self._client.messages.create(
                 model=self._model,
                 max_tokens=1024,
                 system=system,
                 messages=[{"role": m.role, "content": m.content} for m in messages],
-            )
-        except anthropic.RateLimitError as exc:
-            raise TransientProviderError(str(exc)) from exc
-        except anthropic.APITimeoutError as exc:
-            raise TransientProviderError(str(exc)) from exc
-        except anthropic.APIConnectionError as exc:
-            raise TransientProviderError(str(exc)) from exc
-        except anthropic.APIStatusError as exc:
-            if exc.status_code >= 500:
-                raise TransientProviderError(str(exc)) from exc
-            raise PermanentProviderError(str(exc)) from exc
+            ),
+            transient_exceptions=(
+                anthropic.RateLimitError,
+                anthropic.APITimeoutError,
+                anthropic.APIConnectionError,
+            ),
+            status_error_type=anthropic.APIStatusError,
+        )
 
         text = "".join(block.text for block in response.content if block.type == "text")
         return AnswerResult(
