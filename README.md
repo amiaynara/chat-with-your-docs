@@ -36,6 +36,7 @@ cd backend
 uv sync --group dev
 uv run alembic upgrade head
 uv run pytest -q
+uv run pytest --cov=app --cov-report=term-missing  # coverage
 uv run uvicorn app.main:app --reload
 ```
 
@@ -47,4 +48,5 @@ Requires Node >= 22 (see `frontend/.nvmrc`).
 cd frontend
 npm install --legacy-peer-deps
 npm run dev
+npm run test:coverage  # coverage
 ```
