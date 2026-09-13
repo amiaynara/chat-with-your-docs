@@ -31,8 +31,6 @@ def ingest_document(document_id: str) -> None:
                 chunk_size=settings.chunk_size_chars,
                 overlap_ratio=settings.chunk_overlap_ratio,
             )
-            if not text_chunks:
-                raise DocumentParseError("No content could be extracted from this document")
 
             embedder = providers.get_embedding_provider()
             vectors = embedder.embed([chunk.text for chunk in text_chunks])

@@ -32,4 +32,12 @@ describe('App', () => {
 
     expect(await screen.findByText(/no documents yet/i)).toBeInTheDocument()
   })
+
+  it('does not crash when the document list fails to load', async () => {
+    vi.spyOn(documentsApi, 'listDocuments').mockRejectedValue(new Error('network down'))
+
+    render(<App />)
+
+    expect(await screen.findByText('Chat With Your Docs')).toBeInTheDocument()
+  })
 })

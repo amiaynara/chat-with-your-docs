@@ -15,7 +15,7 @@ export function Chat() {
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
     const trimmed = question.trim()
-    if (!trimmed || isAsking) return
+    if (!trimmed) return
 
     setError(null)
     setIsAsking(true)

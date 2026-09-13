@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as documentsApi from '../api/documents'
@@ -42,5 +42,28 @@ describe('UploadForm', () => {
     await userEvent.upload(input, file)
 
     expect(await screen.findByText(/exceeds the 20mb size limit/i)).toBeInTheDocument()
+  })
+
+  it('shows a generic error message for a non-UploadError failure', async () => {
+    vi.spyOn(documentsApi, 'uploadDocument').mockRejectedValue(new Error('network exploded'))
+
+    render(<UploadForm onUploaded={vi.fn()} />)
+
+    const file = new File(['bad'], 'huge.txt', { type: 'text/plain' })
+    const input = screen.getByLabelText(/upload document/i, { selector: 'input' })
+    await userEvent.upload(input, file)
+
+    expect(await screen.findByText(/upload failed\. please try again/i)).toBeInTheDocument()
+  })
+
+  it('does nothing when the file dialog is cancelled', async () => {
+    const uploadSpy = vi.spyOn(documentsApi, 'uploadDocument')
+
+    render(<UploadForm onUploaded={vi.fn()} />)
+
+    const input = screen.getByLabelText(/upload document/i, { selector: 'input' })
+    fireEvent.change(input, { target: { files: [] } })
+
+    expect(uploadSpy).not.toHaveBeenCalled()
   })
 })

@@ -1,6 +1,7 @@
 import pytest
 
 from app import config
+from app.adapters.retry import PermanentProviderError, TransientProviderError
 
 
 def test_upload_txt_document_reaches_ready_and_is_listed(client):
@@ -37,6 +38,39 @@ def test_upload_corrupt_pdf_reaches_failed_with_reason(client):
     assert document["error_reason"]
 
 
+def test_upload_rejects_missing_filename(client):
+    # httpx's `files=` convenience wrapper won't send a blank filename, so a
+    # raw multipart body is built to reach a client that does (a genuine
+    # edge case a malformed or adversarial client could trigger).
+    boundary = "boundary"
+    body = (
+        f"--{boundary}\r\n"
+        'Content-Disposition: form-data; name="file"; filename=""\r\n'
+        "Content-Type: text/plain\r\n\r\n"
+        "whatever\r\n"
+        f"--{boundary}--\r\n"
+    ).encode()
+
+    response = client.post(
+        "/documents",
+        content=body,
+        headers={"content-type": f"multipart/form-data; boundary={boundary}"},
+    )
+
+    assert response.status_code == 422
+    assert "filename" in response.json()["detail"]
+
+
+def test_upload_rejects_empty_file(client):
+    response = client.post(
+        "/documents",
+        files={"file": ("empty.txt", b"", "text/plain")},
+    )
+
+    assert response.status_code == 422
+    assert "empty" in response.json()["detail"]
+
+
 def test_upload_rejects_unsupported_file_type_before_any_ingestion(client):
     response = client.post(
         "/documents",
@@ -59,6 +93,36 @@ def test_upload_rejects_oversized_file_before_any_ingestion(
 
     assert response.status_code == 422
     assert client.get("/documents").json() == []
+
+
+def test_transient_object_storage_error_returns_503(client, fake_object_storage):
+    def _boom(key, data):
+        raise TransientProviderError("minio is momentarily unreachable")
+
+    fake_object_storage.put = _boom
+
+    response = client.post(
+        "/documents",
+        files={"file": ("notes.txt", b"hello world", "text/plain")},
+    )
+
+    assert response.status_code == 503
+    assert "temporarily unavailable" in response.json()["detail"]
+
+
+def test_permanent_object_storage_error_returns_502(client, fake_object_storage):
+    def _boom(key, data):
+        raise PermanentProviderError("bad credentials")
+
+    fake_object_storage.put = _boom
+
+    response = client.post(
+        "/documents",
+        files={"file": ("notes.txt", b"hello world", "text/plain")},
+    )
+
+    assert response.status_code == 502
+    assert "credentials/configuration" in response.json()["detail"]
 
 
 def test_documents_are_scoped_to_the_uploading_session(client):

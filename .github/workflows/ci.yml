@@ -47,6 +47,62 @@ jobs:
       - name: Test
         run: uv run pytest -q
 
+  backend-integration:
+    # Fast + integration tests together, with full coverage. Kept as its own
+    # job (rather than folded into `backend`) per the spec's testing
+    # decisions: contract/integration tests against real adapters are
+    # "excluded from the default fast CI run; run separately/manually or in
+    # a dedicated CI job".
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.x"
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Start MinIO
+        # The official minio image needs a `server /data` command, which
+        # GitHub Actions' `services:` block has no way to supply (no
+        # `command:` field) — so it's run as a plain container instead.
+        run: |
+          docker run -d --name minio \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio server /data
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:9000/minio/health/live && break
+            sleep 1
+          done
+
+      - name: Test (fast + integration, with coverage)
+        run: uv run pytest -m "integration or not integration" --cov=app --cov-report=term-missing
+
   frontend:
     runs-on: ubuntu-latest
     defaults:

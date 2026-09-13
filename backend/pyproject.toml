@@ -38,6 +38,13 @@ markers = [
 ]
 addopts = "-m 'not integration'"
 
+[tool.coverage.report]
+# 100% is only meaningful across the full suite (fast + integration) — the
+# integration tests are the only thing exercising the real adapters'
+# network-client code paths (storage.py's real MinIO round trip, etc).
+# Run: uv run pytest -m "integration or not integration" --cov=app
+fail_under = 100
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

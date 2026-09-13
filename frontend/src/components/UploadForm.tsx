@@ -23,7 +23,9 @@ export function UploadForm({ onUploaded }: UploadFormProps) {
       setError(err instanceof UploadError ? err.message : 'Upload failed. Please try again.')
     } finally {
       setIsUploading(false)
-      if (inputRef.current) inputRef.current.value = ''
+      // Guaranteed mounted: this is the ref of the very input whose onChange
+      // just fired.
+      inputRef.current!.value = ''
     }
   }
 

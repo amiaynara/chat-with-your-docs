@@ -35,9 +35,18 @@ Requires `postgres`, `redis`, and `minio` running (e.g. `docker compose up -d po
 cd backend
 uv sync --group dev
 uv run alembic upgrade head
-uv run pytest -q
-uv run pytest --cov=app --cov-report=term-missing  # coverage
+uv run pytest -q                                    # fast suite (fakes only, no live services)
 uv run uvicorn app.main:app --reload
+```
+
+Coverage: the fast suite alone won't show 100%, because the real provider adapters'
+network-client code paths (e.g. `S3ObjectStorage` actually talking to MinIO) are only
+exercised by the `integration`-marked tests, which need `postgres` and `minio` running
+(`docker compose up -d postgres redis minio`). Together they're 100% (448/448 statements,
+enforced via `fail_under = 100` in `pyproject.toml`):
+
+```
+uv run pytest -m "integration or not integration" --cov=app --cov-report=term-missing
 ```
 
 ## Frontend development (without Docker)
@@ -48,5 +57,5 @@ Requires Node >= 22 (see `frontend/.nvmrc`).
 cd frontend
 npm install --legacy-peer-deps
 npm run dev
-npm run test:coverage  # coverage
+npm run test:coverage  # 100% statements/branches/functions/lines, enforced via vite.config.ts
 ```
