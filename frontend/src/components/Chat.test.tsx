@@ -22,6 +22,22 @@ describe('Chat', () => {
     expect(screen.getByText('What is the secret launch code?')).toBeInTheDocument()
   })
 
+  it('renders markdown formatting in the answer instead of raw syntax', async () => {
+    vi.spyOn(chatApi, 'askQuestion').mockResolvedValue(
+      '**Category:** Negligible\n\n- item one\n- item two',
+    )
+
+    render(<Chat />)
+
+    await userEvent.type(screen.getByPlaceholderText(/ask a question/i), 'A question?')
+    await userEvent.click(screen.getByRole('button', { name: /ask/i }))
+
+    expect(await screen.findByText('Category:')).toBeInstanceOf(HTMLElement)
+    expect(screen.getByText('Category:').tagName).toBe('STRONG')
+    expect(screen.getByText('item one').tagName).toBe('LI')
+    expect(screen.getByText('item two').tagName).toBe('LI')
+  })
+
   it('clears the input after asking', async () => {
     vi.spyOn(chatApi, 'askQuestion').mockResolvedValue('An answer.')
 

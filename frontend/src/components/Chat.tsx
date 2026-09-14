@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import ReactMarkdown from 'react-markdown'
 import { AskError, askQuestion } from '../api/chat'
 
 interface Turn {
@@ -38,9 +39,9 @@ export function Chat() {
             <p className="self-end rounded-lg bg-neutral-900 px-3 py-2 text-sm text-white">
               {turn.question}
             </p>
-            <p className="self-start rounded-lg bg-neutral-100 px-3 py-2 text-sm text-neutral-800">
-              {turn.answer}
-            </p>
+            <div className="prose prose-sm prose-neutral max-w-none self-start rounded-lg bg-neutral-100 px-3 py-2 text-neutral-800">
+              <ReactMarkdown>{turn.answer}</ReactMarkdown>
+            </div>
           </li>
         ))}
       </ul>
