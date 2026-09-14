@@ -1,7 +1,11 @@
+import uuid
+
 import pytest
 
 from app import config
 from app.adapters.retry import PermanentProviderError, TransientProviderError
+from app.db import SessionLocal
+from app.repositories import DocumentRepository
 
 
 def test_upload_txt_document_reaches_ready_and_is_listed(client):
@@ -134,3 +138,70 @@ def test_documents_are_scoped_to_the_uploading_session(client):
 
     other_client = TestClient(app)
     assert other_client.get("/documents").json() == []
+
+
+def _get_object_storage_key(document_id: str) -> str:
+    db = SessionLocal()
+    try:
+        document = DocumentRepository(db).get(uuid.UUID(document_id))
+        assert document is not None
+        return document.object_storage_key
+    finally:
+        db.close()
+
+
+def test_delete_document_removes_it_from_the_list(client):
+    upload = client.post("/documents", files={"file": ("notes.txt", b"hello world", "text/plain")})
+    document_id = upload.json()["id"]
+
+    response = client.delete(f"/documents/{document_id}")
+
+    assert response.status_code == 204
+    assert client.get("/documents").json() == []
+
+
+def test_delete_document_removes_its_blob_from_object_storage(client, fake_object_storage):
+    upload = client.post("/documents", files={"file": ("notes.txt", b"hello world", "text/plain")})
+    document_id = upload.json()["id"]
+    storage_key = _get_object_storage_key(document_id)
+
+    response = client.delete(f"/documents/{document_id}")
+
+    assert response.status_code == 204
+    with pytest.raises(PermanentProviderError):
+        fake_object_storage.get(storage_key)
+
+
+def test_deleted_documents_chunks_no_longer_influence_answers(client):
+    content = b"The secret launch code is Wobble-42."
+    upload = client.post("/documents", files={"file": ("notes.txt", content, "text/plain")})
+    document_id = upload.json()["id"]
+
+    client.delete(f"/documents/{document_id}")
+
+    response = client.post("/chat/messages", json={"question": "What is the secret launch code?"})
+
+    assert response.status_code == 200
+    assert "wobble" not in response.json()["answer"].lower()
+    assert response.json()["citations"] == []
+
+
+def test_delete_nonexistent_document_returns_404(client):
+    response = client.delete(f"/documents/{uuid.uuid4()}")
+
+    assert response.status_code == 404
+
+
+def test_delete_document_is_scoped_to_the_owning_session(client):
+    upload = client.post("/documents", files={"file": ("notes.txt", b"hello world", "text/plain")})
+    document_id = upload.json()["id"]
+
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    other_client = TestClient(app)
+    response = other_client.delete(f"/documents/{document_id}")
+
+    assert response.status_code == 404
+    assert client.get("/documents").json() != []

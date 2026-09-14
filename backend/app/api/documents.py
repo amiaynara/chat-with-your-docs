@@ -85,3 +85,21 @@ def list_documents(
 ) -> list[DocumentOut]:
     documents = DocumentRepository(db).list_for_session(session_id)
     return [DocumentOut.model_validate(document) for document in documents]
+
+
+@router.delete("/{document_id}", status_code=204)
+def delete_document(
+    document_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    session_id: str = Depends(get_session_id),
+) -> None:
+    repo = DocumentRepository(db)
+    document = repo.get(document_id)
+    # A document that exists but belongs to another session reads as "not found"
+    # rather than 403 — same scoping stance as list_documents, and avoids
+    # confirming a document id belongs to someone else's session.
+    if document is None or document.session_id != session_id:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    providers.get_object_storage().delete(document.object_storage_key)
+    repo.delete(document)

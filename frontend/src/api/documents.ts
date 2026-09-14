@@ -12,6 +12,7 @@ export interface Document {
 }
 
 export class UploadError extends Error {}
+export class DeleteError extends Error {}
 
 export async function listDocuments(): Promise<Document[]> {
   const response = await fetch(`${API_BASE_URL}/documents`, { credentials: 'include' })
@@ -19,6 +20,17 @@ export async function listDocuments(): Promise<Document[]> {
     throw new Error(`Failed to list documents: ${response.status}`)
   }
   return response.json()
+}
+
+export async function deleteDocument(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/documents/${id}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+
+  if (!response.ok) {
+    throw new DeleteError(`Failed to delete document: ${response.status}`)
+  }
 }
 
 export async function uploadDocument(file: File): Promise<Document> {

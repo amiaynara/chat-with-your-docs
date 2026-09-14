@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { listDocuments, uploadDocument, UploadError } from './documents'
+import { deleteDocument, DeleteError, listDocuments, uploadDocument, UploadError } from './documents'
 
 describe('listDocuments', () => {
   afterEach(() => {
@@ -91,5 +91,29 @@ describe('uploadDocument', () => {
 
     const file = new File(['bad'], 'a.txt')
     await expect(uploadDocument(file)).rejects.toThrow('Upload failed: 500')
+  })
+})
+
+describe('deleteDocument', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('sends a DELETE request with credentials included', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 204 })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await deleteDocument('doc-1')
+
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('http://localhost:8000/documents/doc-1')
+    expect(init).toEqual({ method: 'DELETE', credentials: 'include' })
+  })
+
+  it('throws DeleteError when the response is not ok', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }))
+
+    await expect(deleteDocument('doc-1')).rejects.toThrow(DeleteError)
+    await expect(deleteDocument('doc-1')).rejects.toThrow('Failed to delete document: 404')
   })
 })

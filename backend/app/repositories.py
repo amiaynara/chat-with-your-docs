@@ -46,6 +46,13 @@ class DocumentRepository:
         document.error_reason = error_reason
         self._db.commit()
 
+    def delete(self, document: Document) -> None:
+        # Chunk.document has cascade="all, delete-orphan" (app/models.py) and the FK
+        # itself is ondelete="CASCADE", so deleting the Document row takes its chunks
+        # (and their embeddings) with it — no separate chunk cleanup needed here.
+        self._db.delete(document)
+        self._db.commit()
+
 
 class ChunkRepository:
     def __init__(self, db: Session) -> None:

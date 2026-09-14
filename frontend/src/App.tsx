@@ -43,7 +43,7 @@ function App() {
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-medium text-neutral-600">Documents</h2>
         <UploadForm onUploaded={refresh} />
-        <DocumentList documents={documents} />
+        <DocumentList documents={documents} onDeleted={refresh} />
       </section>
 
       <section className="flex flex-col gap-3">
