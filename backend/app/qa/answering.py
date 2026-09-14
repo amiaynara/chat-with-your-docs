@@ -1,3 +1,6 @@
+import uuid
+from dataclasses import dataclass
+
 from sqlalchemy.orm import Session
 
 from app import providers
@@ -16,8 +19,33 @@ don't have enough information, rather than guessing or using outside knowledge.
 {context}
 </context>"""
 
+# A citation's snippet is a preview, not the full chunk — long enough to let a user
+# recognize/verify the supporting passage at a glance without reproducing the whole
+# (up to chunk_size_chars) chunk in the response payload.
+_SNIPPET_MAX_CHARS = 240
 
-def answer_question(db: Session, question: str) -> str:
+
+@dataclass
+class Citation:
+    document_id: uuid.UUID
+    filename: str
+    location_ref: str
+    snippet: str
+
+
+@dataclass
+class Answer:
+    text: str
+    citations: list[Citation]
+
+
+def _snippet(content: str) -> str:
+    if len(content) <= _SNIPPET_MAX_CHARS:
+        return content
+    return content[:_SNIPPET_MAX_CHARS].rstrip() + "…"
+
+
+def answer_question(db: Session, question: str) -> Answer:
     """Retrieve relevant chunks and generate an answer grounded in them.
 
     Single-turn for now (no conversation history) — see ticket #7/#8 for
@@ -32,4 +60,16 @@ def answer_question(db: Session, question: str) -> str:
     system = _SYSTEM_TEMPLATE.format(context=context)
     llm = providers.get_llm_provider()
     result = llm.generate(system=system, messages=[Message(role="user", content=question)])
-    return result.text
+
+    # Citations are the chunks actually placed in the prompt's <context> block above
+    # — i.e. exactly the passages the model had available to ground its answer in.
+    citations = [
+        Citation(
+            document_id=chunk.document_id,
+            filename=chunk.document.filename,
+            location_ref=chunk.location_ref,
+            snippet=_snippet(chunk.content),
+        )
+        for chunk in chunks
+    ]
+    return Answer(text=result.text, citations=citations)

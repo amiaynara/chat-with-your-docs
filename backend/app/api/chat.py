@@ -1,4 +1,5 @@
 import logging
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -16,14 +17,22 @@ class AskRequest(BaseModel):
     question: str
 
 
+class CitationOut(BaseModel):
+    document_id: uuid.UUID
+    filename: str
+    location_ref: str
+    snippet: str
+
+
 class AskResponse(BaseModel):
     answer: str
+    citations: list[CitationOut]
 
 
 @router.post("/messages", response_model=AskResponse)
 def ask_question(request: AskRequest, db: Session = Depends(get_db)) -> AskResponse:
     try:
-        answer = answer_question(db, request.question)
+        result = answer_question(db, request.question)
     except Exception:
         # Provider SDKs raise their own, inconsistent exception types for
         # configuration errors (e.g. a missing API key) that never reach our
@@ -34,4 +43,15 @@ def ask_question(request: AskRequest, db: Session = Depends(get_db)) -> AskRespo
         raise HTTPException(
             status_code=502, detail="Could not get an answer right now. Please try again shortly."
         ) from None
-    return AskResponse(answer=answer)
+    return AskResponse(
+        answer=result.text,
+        citations=[
+            CitationOut(
+                document_id=c.document_id,
+                filename=c.filename,
+                location_ref=c.location_ref,
+                snippet=c.snippet,
+            )
+            for c in result.citations
+        ],
+    )

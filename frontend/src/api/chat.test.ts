@@ -6,16 +6,19 @@ describe('askQuestion', () => {
     vi.unstubAllGlobals()
   })
 
-  it('sends the question and returns the answer', async () => {
+  it('sends the question and returns the answer with its citations', async () => {
+    const citations = [
+      { document_id: 'doc-1', filename: 'notes.txt', location_ref: 'document', snippet: 'Wobble-42.' },
+    ]
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ answer: 'Wobble-42.' }),
+      json: async () => ({ answer: 'Wobble-42.', citations }),
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    const answer = await askQuestion('What is the secret code?')
+    const result = await askQuestion('What is the secret code?')
 
-    expect(answer).toBe('Wobble-42.')
+    expect(result).toEqual({ answer: 'Wobble-42.', citations })
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe('http://localhost:8000/chat/messages')
     expect(init).toMatchObject({

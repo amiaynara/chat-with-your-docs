@@ -10,7 +10,10 @@ describe('Chat', () => {
   })
 
   it('asks a question and displays the answer', async () => {
-    vi.spyOn(chatApi, 'askQuestion').mockResolvedValue('The secret launch code is Wobble-42.')
+    vi.spyOn(chatApi, 'askQuestion').mockResolvedValue({
+      answer: 'The secret launch code is Wobble-42.',
+      citations: [],
+    })
 
     render(<Chat />)
 
@@ -23,9 +26,10 @@ describe('Chat', () => {
   })
 
   it('renders markdown formatting in the answer instead of raw syntax', async () => {
-    vi.spyOn(chatApi, 'askQuestion').mockResolvedValue(
-      '**Category:** Negligible\n\n- item one\n- item two',
-    )
+    vi.spyOn(chatApi, 'askQuestion').mockResolvedValue({
+      answer: '**Category:** Negligible\n\n- item one\n- item two',
+      citations: [],
+    })
 
     render(<Chat />)
 
@@ -38,8 +42,55 @@ describe('Chat', () => {
     expect(screen.getByText('item two').tagName).toBe('LI')
   })
 
+  it('shows numbered citation markers that reveal a source panel on click', async () => {
+    vi.spyOn(chatApi, 'askQuestion').mockResolvedValue({
+      answer: 'The secret launch code is Wobble-42.',
+      citations: [
+        {
+          document_id: 'doc-1',
+          filename: 'notes.txt',
+          location_ref: 'document',
+          snippet: 'The secret launch code is Wobble-42. Keep it safe.',
+        },
+      ],
+    })
+
+    render(<Chat />)
+
+    await userEvent.type(screen.getByPlaceholderText(/ask a question/i), 'What is the code?')
+    await userEvent.click(screen.getByRole('button', { name: /ask/i }))
+
+    const marker = await screen.findByRole('button', { name: '1' })
+    expect(screen.queryByText('notes.txt')).not.toBeInTheDocument()
+
+    await userEvent.click(marker)
+
+    expect(screen.getByText('notes.txt')).toBeInTheDocument()
+    expect(screen.getByText('document')).toBeInTheDocument()
+    expect(screen.getByText(/keep it safe/i)).toBeInTheDocument()
+
+    await userEvent.click(marker)
+
+    expect(screen.queryByText('notes.txt')).not.toBeInTheDocument()
+  })
+
+  it('shows no source markers when the answer has no citations', async () => {
+    vi.spyOn(chatApi, 'askQuestion').mockResolvedValue({
+      answer: "I don't have any supporting information to answer that.",
+      citations: [],
+    })
+
+    render(<Chat />)
+
+    await userEvent.type(screen.getByPlaceholderText(/ask a question/i), 'A question?')
+    await userEvent.click(screen.getByRole('button', { name: /ask/i }))
+
+    await screen.findByText(/don't have any supporting information/i)
+    expect(screen.queryByText(/sources/i)).not.toBeInTheDocument()
+  })
+
   it('clears the input after asking', async () => {
-    vi.spyOn(chatApi, 'askQuestion').mockResolvedValue('An answer.')
+    vi.spyOn(chatApi, 'askQuestion').mockResolvedValue({ answer: 'An answer.', citations: [] })
 
     render(<Chat />)
 
