@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from app import providers
@@ -8,6 +9,17 @@ from app.ingestion.chunking import chunk_sections
 from app.ingestion.parsing import DocumentParseError, parse_document
 from app.models import Chunk, DocumentStatus
 from app.repositories import ChunkRepository, DocumentRepository
+
+logger = logging.getLogger(__name__)
+
+# Shown to the user in place of the raw exception, which may be an internal
+# infra/config error (e.g. a missing provider API key) that isn't theirs to
+# fix and shouldn't leak implementation detail. The real exception still goes
+# to the logs via logger.exception below.
+GENERIC_FAILURE_MESSAGE = (
+    "We couldn't process this document due to a system error on our end. "
+    "Please try uploading again, or contact support if this keeps happening."
+)
 
 
 @celery_app.task(name="app.ingestion.tasks.ingest_document")
@@ -50,10 +62,21 @@ def ingest_document(document_id: str) -> None:
 
             documents.set_status(document.id, DocumentStatus.READY)
         except DocumentParseError as exc:
+            logger.warning(
+                "Document parse failed for document_id=%s filename=%r: %s",
+                document.id,
+                document.filename,
+                exc,
+            )
             documents.set_status(document.id, DocumentStatus.FAILED, error_reason=str(exc))
-        except Exception as exc:  # noqa: BLE001 - any adapter/infra failure surfaces to the user
+        except Exception:  # noqa: BLE001 - any adapter/infra failure; logged in full, sanitized for the user
+            logger.exception(
+                "Ingestion failed for document_id=%s filename=%r",
+                document.id,
+                document.filename,
+            )
             documents.set_status(
-                document.id, DocumentStatus.FAILED, error_reason=f"Ingestion failed: {exc}"
+                document.id, DocumentStatus.FAILED, error_reason=GENERIC_FAILURE_MESSAGE
             )
     finally:
         db.close()

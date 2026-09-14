@@ -1,7 +1,8 @@
 import uuid
+from unittest.mock import patch
 
 from app.db import SessionLocal
-from app.ingestion.tasks import ingest_document
+from app.ingestion.tasks import GENERIC_FAILURE_MESSAGE, ingest_document
 from app.models import DocumentStatus
 from app.repositories import DocumentRepository
 
@@ -35,12 +36,23 @@ def test_ingest_document_marks_failed_on_an_unexpected_embedding_error(
 
     fake_embedding_provider.embed = _boom
 
-    ingest_document(str(document_id))
+    with patch("app.ingestion.tasks.logger") as mock_logger:
+        ingest_document(str(document_id))
 
+        # The real exception and document context are captured for developers...
+        mock_logger.exception.assert_called_once()
+        logged_message, *logged_args = mock_logger.exception.call_args.args
+        assert (logged_message % tuple(logged_args)) == (
+            f"Ingestion failed for document_id={document_id} filename='doc.txt'"
+        )
+
+    # ...while the user only ever sees a sanitized, actionable message — never
+    # the raw internal/infra exception text (which may leak config or provider
+    # detail, e.g. a missing API key).
     db = SessionLocal()
     try:
         refreshed = DocumentRepository(db).get(document_id)
         assert refreshed.status == DocumentStatus.FAILED
-        assert refreshed.error_reason == "Ingestion failed: embedding service is down"
+        assert refreshed.error_reason == GENERIC_FAILURE_MESSAGE
     finally:
         db.close()
