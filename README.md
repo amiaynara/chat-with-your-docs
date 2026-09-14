@@ -12,6 +12,13 @@ uploads to actually reach `ready` instead of failing with a clear "missing crede
 `docker compose up` still works fully without them (upload, validation, and status tracking all
 work; only the embedding/answer step needs real keys).
 
+No OpenAI key/credits? Set `EMBEDDING_PROVIDER=local` instead — ingestion then runs a local
+embedding model (`sentence-transformers`, no API key, no cost, comparable retrieval quality).
+See `docs/embeddings.md` for the tradeoffs and how to switch.
+
+No Anthropic key/budget? Set `LLM_PROVIDER=google` instead — chat then answers via Google
+Gemini, which has a real (rate-limited) free tier. See `docs/llm-providers.md`.
+
 ```
 docker compose up
 ```

@@ -47,13 +47,16 @@ def classify_provider_call(
     *,
     transient_exceptions: tuple[type[BaseException], ...],
     status_error_type: type[BaseException] | None = None,
+    status_code_attr: str = "status_code",
 ) -> T:
     """Run `call`, translating SDK-specific exceptions to Transient/PermanentProviderError.
 
     `transient_exceptions` (e.g. an SDK's RateLimitError/timeout/connection-error
     types) are always treated as transient. `status_error_type` (e.g. an SDK's
-    generic APIStatusError) is classified by its `.status_code`: 429/5xx is
-    transient, everything else (bad request, auth) is permanent.
+    generic APIStatusError) is classified by the HTTP status code on
+    `status_code_attr` (openai/anthropic expose it as `.status_code`; google-genai's
+    APIError exposes it as `.code` instead — pass `status_code_attr="code"` for that
+    one): 429/5xx is transient, everything else (bad request, auth) is permanent.
 
     Shared by every provider adapter so the same policy — not a per-adapter
     reimplementation of it — decides what gets retried.
@@ -64,7 +67,7 @@ def classify_provider_call(
         raise TransientProviderError(str(exc)) from exc
     except BaseException as exc:
         if status_error_type is not None and isinstance(exc, status_error_type):
-            status_code = getattr(exc, "status_code", 500)
+            status_code = getattr(exc, status_code_attr, 500)
             if status_code == 429 or status_code >= 500:
                 raise TransientProviderError(str(exc)) from exc
             raise PermanentProviderError(str(exc)) from exc

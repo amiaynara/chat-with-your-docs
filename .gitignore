@@ -15,5 +15,8 @@ backend/htmlcov/
 backend/.env
 .env
 
+# md files
+ideas.md
+
 # Node (frontend/.gitignore also covers this, kept here for repo-root tooling)
 frontend/node_modules/

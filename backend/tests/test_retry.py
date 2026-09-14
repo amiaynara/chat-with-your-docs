@@ -19,6 +19,14 @@ class _StatusError(Exception):
         self.status_code = status_code
 
 
+class _CodeError(Exception):
+    """Mimics google-genai's APIError, which exposes `.code` instead of `.status_code`."""
+
+    def __init__(self, code: int) -> None:
+        super().__init__(f"code {code}")
+        self.code = code
+
+
 def test_classify_provider_call_returns_the_call_result_on_success():
     assert classify_provider_call(lambda: 42, transient_exceptions=()) == 42
 
@@ -53,6 +61,19 @@ def test_classify_provider_call_maps_a_4xx_status_error_to_permanent():
 
     with pytest.raises(PermanentProviderError):
         classify_provider_call(_boom, transient_exceptions=(), status_error_type=_StatusError)
+
+
+def test_classify_provider_call_reads_a_custom_status_code_attribute():
+    def _boom():
+        raise _CodeError(500)
+
+    with pytest.raises(TransientProviderError):
+        classify_provider_call(
+            _boom,
+            transient_exceptions=(),
+            status_error_type=_CodeError,
+            status_code_attr="code",
+        )
 
 
 def test_classify_provider_call_reraises_an_unrecognized_exception():

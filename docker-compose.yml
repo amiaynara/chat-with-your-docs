@@ -53,6 +53,7 @@ services:
         required: false
     volumes:
       - ./backend:/app
+      - hf_cache:/opt/hf-cache
     ports:
       - "8000:8000"
     depends_on:
@@ -72,6 +73,7 @@ services:
         required: false
     volumes:
       - ./backend:/app
+      - hf_cache:/opt/hf-cache
     depends_on:
       postgres:
         condition: service_healthy
@@ -95,3 +97,4 @@ services:
 volumes:
   postgres_data:
   minio_data:
+  hf_cache:

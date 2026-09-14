@@ -19,17 +19,33 @@ dependencies = [
     "openai>=1.54",
     "anthropic>=0.39",
     "python-multipart>=0.0.12",
+    "sentence-transformers>=3.0",
+    "torch>=2.2",
+    "google-genai>=2.23.0",
+    "httpx>=0.28",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
-    "httpx>=0.27",
     "ruff>=0.7",
     "mypy>=1.13",
     "pytest-cov>=7.1.0",
 ]
+
+# LocalEmbeddingProvider (app/adapters/embeddings.py) only ever runs on CPU — Docker
+# Desktop doesn't pass a GPU into containers, and this app has no other use for a GPU
+# build of torch. The default PyPI torch wheel bundles CUDA runtime libraries as
+# transitive deps regardless (multiple GB, useless here), so pin torch to the
+# official CPU-only wheel index instead.
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

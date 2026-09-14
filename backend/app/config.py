@@ -16,11 +16,39 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str = ""
     openai_api_key: str = ""
+    google_api_key: str = ""
     provider_timeout_seconds: float = 30.0
 
+    # Which LLMProvider implementation app.providers.get_llm_provider() constructs —
+    # "anthropic" (needs ANTHROPIC_API_KEY) or "google" (Gemini; needs GOOGLE_API_KEY,
+    # has a real free tier — see docs/llm-providers.md). "anthropic" is the default
+    # purely to preserve existing behavior; it isn't a claim that it's the better
+    # choice. Swapping this is a config-only change — no DB/schema impact, unlike
+    # swapping EMBEDDING_PROVIDER, since answers are plain text, not a stored vector.
+    llm_provider: str = "anthropic"
+    # Answering here is a single stateless call per question (see
+    # AnthropicLLMProvider.generate) — no tool use, no multi-turn agent loop — so
+    # there's no need for a larger reasoning model. Haiku 4.5 is Anthropic's cheapest
+    # current model; chosen to minimize per-answer cost for this workload.
+    llm_model: str = "claude-haiku-4-5-20251001"
+    # gemini-2.5-flash is deprecated for new API keys as of this writing — Google's API
+    # itself returns a 404 directing new callers to gemini-3.6-flash. Confirmed live
+    # against the real API, not assumed.
+    google_llm_model: str = "gemini-3.6-flash"
+
+    # Which EmbeddingProvider implementation app.providers.get_embedding_provider()
+    # constructs — "openai" (hosted, needs OPENAI_API_KEY + credits) or "local" (runs
+    # on-machine via sentence-transformers, no key/cost, slightly lower retrieval
+    # quality). See docs/embeddings.md. Swapping this is a config-only change; the two
+    # models produce differently-sized vectors, so embedding_dimensions below must be
+    # updated to match and existing chunks re-indexed — see that doc for why.
+    embedding_provider: str = "openai"
     embedding_model: str = "text-embedding-3-small"
     embedding_model_version: str = "1"
     embedding_dimensions: int = 1536
+
+    local_embedding_model: str = "BAAI/bge-small-en-v1.5"
+    local_embedding_model_version: str = "1"
 
     max_upload_bytes: int = 20 * 1024 * 1024
     allowed_upload_extensions: tuple[str, ...] = (".pdf", ".txt", ".md")
