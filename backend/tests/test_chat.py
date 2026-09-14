@@ -58,12 +58,18 @@ def test_citation_snippet_is_truncated_for_a_long_supporting_chunk(client):
 
 
 def test_llm_provider_failure_returns_a_clean_error_not_a_bare_500(client, fake_llm_provider):
+    # A relevant document must exist, or the no-evidence guardrail refuses before
+    # the LLM is ever called — this test is specifically about a failure *from* the
+    # LLM call, so retrieval must actually reach it.
+    content = b"The secret launch code is Wobble-42."
+    client.post("/documents", files={"file": ("notes.txt", content, "text/plain")})
+
     def _boom(*args, **kwargs):
         raise RuntimeError("provider misconfigured: leaked internal detail")
 
     fake_llm_provider.generate = _boom
 
-    response = client.post("/chat/messages", json={"question": "anything?"})
+    response = client.post("/chat/messages", json={"question": "What is the secret launch code?"})
 
     assert response.status_code == 502
     detail = response.json()["detail"]

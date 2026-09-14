@@ -24,6 +24,16 @@ don't have enough information, rather than guessing or using outside knowledge.
 # (up to chunk_size_chars) chunk in the response payload.
 _SNIPPET_MAX_CHARS = 240
 
+# Deterministic refusal for issue #6's guardrail: no retrieved chunk cleared
+# settings.retrieval_relevance_threshold, whether because the corpus is empty or
+# because it simply doesn't cover the question. Returned without ever calling the
+# LLM — relevance is decided by retrieval distance, not by asking the model to
+# judge its own context (which a real model could get talked out of via the
+# question itself).
+_NO_EVIDENCE_MESSAGE = (
+    "I don't have any information in the uploaded documents to answer that question."
+)
+
 
 @dataclass
 class Citation:
@@ -54,7 +64,15 @@ def answer_question(db: Session, question: str) -> Answer:
     embedder = providers.get_embedding_provider()
     query_vector = embedder.embed([question])[0]
 
-    chunks = ChunkRepository(db).search_ready(query_vector, limit=settings.retrieval_top_k)
+    scored_chunks = ChunkRepository(db).search_ready(query_vector, limit=settings.retrieval_top_k)
+    chunks = [
+        chunk
+        for chunk, distance in scored_chunks
+        if distance <= settings.retrieval_relevance_threshold
+    ]
+    if not chunks:
+        return Answer(text=_NO_EVIDENCE_MESSAGE, citations=[])
+
     context = "\n\n".join(f"[{chunk.location_ref}] {chunk.content}" for chunk in chunks)
 
     system = _SYSTEM_TEMPLATE.format(context=context)

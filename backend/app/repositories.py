@@ -55,12 +55,19 @@ class ChunkRepository:
         self._db.add_all(chunks)
         self._db.commit()
 
-    def search_ready(self, query_embedding: list[float], limit: int) -> list[Chunk]:
+    def search_ready(self, query_embedding: list[float], limit: int) -> list[tuple[Chunk, float]]:
+        """Return the `limit` nearest READY chunks, each paired with its cosine
+        distance to `query_embedding` (0 = identical, 1 = orthogonal/unrelated for
+        the non-negative vectors both real embedding models here produce) — callers
+        use the distance to judge whether a match is relevant at all, not just to
+        rank matches against each other.
+        """
+        distance = Chunk.embedding.cosine_distance(query_embedding).label("distance")
         stmt = (
-            select(Chunk)
+            select(Chunk, distance)
             .join(Document, Chunk.document_id == Document.id)
             .where(Document.status == DocumentStatus.READY)
-            .order_by(Chunk.embedding.cosine_distance(query_embedding))
+            .order_by(distance)
             .limit(limit)
         )
-        return list(self._db.scalars(stmt).all())
+        return [(chunk, dist) for chunk, dist in self._db.execute(stmt).all()]

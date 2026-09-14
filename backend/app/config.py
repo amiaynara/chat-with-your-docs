@@ -64,6 +64,15 @@ class Settings(BaseSettings):
     session_cookie_secure: bool = True
 
     retrieval_top_k: int = 5
+    # Cosine-distance ceiling a retrieved chunk must fall under to count as
+    # "supporting evidence" — a starting hypothesis, not a locked constant (mirrors
+    # chunk_overlap_ratio above), meant to be validated/tuned against the eval
+    # harness (#12/#13). Below this, answer_question() refuses deterministically
+    # (issue #6's no-evidence/out-of-corpus guardrail) rather than asking the LLM to
+    # judge relevance itself — a genuinely irrelevant top-k chunk (distance ~1.0 for
+    # zero vocabulary overlap) is the same signal whether the corpus is empty or just
+    # doesn't cover the question.
+    retrieval_relevance_threshold: float = 0.9
 
 
 settings = Settings()
