@@ -64,10 +64,14 @@ class ChunkRepository:
 
     def search_ready(self, query_embedding: list[float], limit: int) -> list[tuple[Chunk, float]]:
         """Return the `limit` nearest READY chunks, each paired with its cosine
-        distance to `query_embedding` (0 = identical, 1 = orthogonal/unrelated for
-        the non-negative vectors both real embedding models here produce) — callers
-        use the distance to judge whether a match is relevant at all, not just to
-        rank matches against each other.
+        distance to `query_embedding` — 0 means identical direction. (In general
+        cosine distance ranges up to 2; neither real embedding model here — OpenAI's
+        or the local sentence-transformers one — is guaranteed to produce
+        non-negative-only vectors, so don't assume a 1.0 ceiling for real embeddings.
+        Only the deterministic bag-of-words fake used in tests has that property,
+        since it sums non-negative word counts.) Callers use the distance to judge
+        whether a match is relevant at all, not just to rank matches against each
+        other.
         """
         distance = Chunk.embedding.cosine_distance(query_embedding).label("distance")
         stmt = (

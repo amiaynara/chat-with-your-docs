@@ -66,12 +66,15 @@ class Settings(BaseSettings):
     retrieval_top_k: int = 5
     # Cosine-distance ceiling a retrieved chunk must fall under to count as
     # "supporting evidence" — a starting hypothesis, not a locked constant (mirrors
-    # chunk_overlap_ratio above), meant to be validated/tuned against the eval
-    # harness (#12/#13). Below this, answer_question() refuses deterministically
-    # (issue #6's no-evidence/out-of-corpus guardrail) rather than asking the LLM to
-    # judge relevance itself — a genuinely irrelevant top-k chunk (distance ~1.0 for
-    # zero vocabulary overlap) is the same signal whether the corpus is empty or just
-    # doesn't cover the question.
+    # chunk_overlap_ratio above), calibrated against the deterministic fake embedding
+    # used in tests (see ChunkRepository.search_ready's docstring — real embedding
+    # models aren't guaranteed to bound distance at 1.0 the way that fake is) and
+    # meant to be validated/tuned against real embeddings via the eval harness
+    # (#12/#13). Below this, answer_question() refuses deterministically (issue #6's
+    # no-evidence/out-of-corpus guardrail) rather than asking the LLM to judge
+    # relevance itself — a genuinely irrelevant top-k chunk (distance ~1.0 against the
+    # fake, for zero vocabulary overlap) is the same signal whether the corpus is
+    # empty or just doesn't cover the question.
     retrieval_relevance_threshold: float = 0.9
 
 
