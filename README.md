@@ -29,7 +29,7 @@ docker compose up
 
 This starts:
 
-- `api` — FastAPI app on http://localhost:8000 (health check: `GET /health`)
+- `api` — FastAPI app on http://localhost:8000 (health check: `GET /health`; interactive API docs: http://localhost:8000/docs, or http://localhost:8000/redoc)
 - `worker` — Celery worker (background document ingestion)
 - `postgres` — Postgres 16 with the `pgvector` extension, published on host port `5433` (not the default `5432`, to avoid clashing with a locally-installed Postgres)
 - `redis` — Celery broker/result backend

@@ -2,7 +2,7 @@ import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.adapters.llm import Message as LLMMessage
@@ -28,15 +28,23 @@ _NO_DOCUMENTS_MESSAGE = (
 
 
 class AskRequest(BaseModel):
-    question: str
-    doc_ids: list[uuid.UUID] | None = None
+    question: str = Field(description="The question to ask over the session's documents.")
+    doc_ids: list[uuid.UUID] | None = Field(
+        default=None,
+        description="Restrict retrieval to these document ids (must belong to the asking "
+        "session). Omit or leave null to search the whole session library.",
+    )
 
 
 class CitationOut(BaseModel):
-    document_id: uuid.UUID
-    filename: str
-    location_ref: str
-    snippet: str
+    """A supporting source for part of an answer, pointing back at the chunk it came from."""
+
+    document_id: uuid.UUID = Field(description="Id of the document this citation is from.")
+    filename: str = Field(description="Filename of the cited document.")
+    location_ref: str = Field(
+        description="Human-readable location within the document, e.g. 'page 3'."
+    )
+    snippet: str = Field(description="The cited chunk's text, or an excerpt of it.")
 
     @classmethod
     def from_citation(cls, citation: Citation) -> "CitationOut":
@@ -49,14 +57,24 @@ class CitationOut(BaseModel):
 
 
 class AskResponse(BaseModel):
-    answer: str
-    citations: list[CitationOut]
+    answer: str = Field(description="The generated answer text.")
+    citations: list[CitationOut] = Field(
+        description="Sources the answer draws on. Empty when no relevant evidence was found "
+        "(the model was instructed to refuse rather than guess) or when the session has no "
+        "documents yet."
+    )
 
 
 class MessageOut(BaseModel):
-    role: str
-    content: str
-    citations: list[CitationOut] | None = None
+    """One turn of the session's chat transcript."""
+
+    role: str = Field(description="Who sent this turn: 'user' or 'assistant'.")
+    content: str = Field(description="The turn's text — the question or the generated answer.")
+    citations: list[CitationOut] | None = Field(
+        default=None,
+        description="Present only on an assistant turn that had supporting citations; "
+        "null for a user turn or an assistant turn with none.",
+    )
 
 
 def _recent_history(message_repo: MessageRepository, session_id: str) -> list[LLMMessage]:
@@ -92,7 +110,21 @@ def _generate_answer_or_502(
         ) from None
 
 
-@router.post("/messages", response_model=AskResponse)
+@router.post(
+    "/messages",
+    response_model=AskResponse,
+    summary="Ask a question over the session's documents",
+    description="Retrieves relevant chunks (hybrid vector + keyword search, optionally "
+    "reranked), generates a cited answer, and persists both the question and the answer to "
+    "the session's chat history. Answers 'you haven't uploaded any documents yet' without "
+    "calling the LLM if the session's document library is empty.",
+    responses={
+        502: {
+            "description": "Could not get an answer from the LLM right now. Please try again "
+            "shortly."
+        }
+    },
+)
 def ask_question(
     request: AskRequest,
     db: Session = Depends(get_db),
@@ -122,7 +154,13 @@ def ask_question(
     return AskResponse(answer=result.text, citations=citations_out)
 
 
-@router.get("/messages", response_model=list[MessageOut])
+@router.get(
+    "/messages",
+    response_model=list[MessageOut],
+    summary="Get the asking session's chat history",
+    description="Returns every question/answer turn for the asking session (identified by its "
+    "anonymous session cookie), oldest first.",
+)
 def get_message_history(
     db: Session = Depends(get_db),
     session_id: str = Depends(get_session_id),

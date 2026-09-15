@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app import providers
@@ -23,13 +23,34 @@ _EXTENSION_TO_FORMAT = {
 
 
 class DocumentOut(BaseModel):
-    id: uuid.UUID
-    filename: str
-    format: DocumentFormat
-    status: str
-    error_reason: str | None
-    error_category: DocumentErrorCategory | None
-    created_at: datetime
+    """A document's ingestion record.
+
+    `status` moves through the pipeline as `queued` → `processing` →
+    `ready`, or `failed` if ingestion could not complete. `error_reason` and
+    `error_category` are only ever set once `status` is `failed`; both are
+    `null` otherwise.
+    """
+
+    id: uuid.UUID = Field(description="Unique identifier for the document.")
+    filename: str = Field(description="Original filename as uploaded.")
+    format: DocumentFormat = Field(
+        description="Document format, inferred from the file extension at upload time."
+    )
+    status: str = Field(
+        description="Position in the ingestion lifecycle: "
+        "'queued', 'processing', 'ready', or 'failed'."
+    )
+    error_reason: str | None = Field(
+        description="Human-readable explanation of the ingestion failure. "
+        "Set only when status is 'failed'; null otherwise."
+    )
+    error_category: DocumentErrorCategory | None = Field(
+        description="Set only when status is 'failed'. 'user_error' means the file itself is "
+        "the problem (terminal — fix it and re-upload; POST .../retry is rejected). "
+        "'system_error' means an infra/provider problem unrelated to the file (retryable via "
+        "POST .../retry). Null unless status is 'failed'."
+    )
+    created_at: datetime = Field(description="When the document was uploaded.")
 
     model_config = {"from_attributes": True}
 
@@ -46,7 +67,27 @@ def _resolve_format(filename: str) -> DocumentFormat:
     return document_format
 
 
-@router.post("", response_model=DocumentOut, status_code=201)
+@router.post(
+    "",
+    response_model=DocumentOut,
+    status_code=201,
+    summary="Upload a document for ingestion",
+    description="Stores the uploaded file (pdf, txt, or md) in object storage and enqueues it "
+    "for background ingestion (parse → chunk → embed → index). The returned document is "
+    "'queued'; poll GET /documents to observe it move to 'processing' and then 'ready' or "
+    "'failed'.",
+    responses={
+        422: {
+            "description": "The upload is invalid: missing filename, an unsupported file "
+            "extension, an empty file, or a file over the size limit."
+        },
+        502: {
+            "description": "Object storage rejected the request "
+            "(check credentials/configuration)."
+        },
+        503: {"description": "Object storage is temporarily unavailable. Try again shortly."},
+    },
+)
 async def upload_document(
     file: UploadFile,
     db: Session = Depends(get_db),
@@ -79,7 +120,13 @@ async def upload_document(
     return DocumentOut.model_validate(document)
 
 
-@router.get("", response_model=list[DocumentOut])
+@router.get(
+    "",
+    response_model=list[DocumentOut],
+    summary="List the asking session's documents",
+    description="Returns every document uploaded by the asking session (identified by its "
+    "anonymous session cookie), newest first. Never includes another session's documents.",
+)
 def list_documents(
     db: Session = Depends(get_db),
     session_id: str = Depends(get_session_id),
@@ -88,7 +135,20 @@ def list_documents(
     return [DocumentOut.model_validate(document) for document in documents]
 
 
-@router.delete("/{document_id}", status_code=204)
+@router.delete(
+    "/{document_id}",
+    status_code=204,
+    summary="Delete a document",
+    description="Removes the document, its chunks/embeddings, and its object storage blob. "
+    "Its chunks stop influencing future answers immediately.",
+    responses={
+        404: {
+            "description": "No document with this id exists in the asking session's own "
+            "document library (also returned for another session's document, to avoid "
+            "confirming that the id belongs to someone else)."
+        }
+    },
+)
 def delete_document(
     document_id: uuid.UUID,
     db: Session = Depends(get_db),
@@ -106,7 +166,28 @@ def delete_document(
     repo.delete(document)
 
 
-@router.post("/{document_id}/retry", response_model=DocumentOut)
+@router.post(
+    "/{document_id}/retry",
+    response_model=DocumentOut,
+    summary="Retry a failed document's ingestion",
+    description="Re-enqueues ingestion for a 'failed' document using its existing stored "
+    "object-storage blob — no re-upload required. Only allowed when the failure was "
+    "classified 'system_error' (an infra/provider problem, not the file itself).",
+    responses={
+        404: {
+            "description": "No document with this id exists in the asking session's own "
+            "document library (also returned for another session's document, to avoid "
+            "confirming that the id belongs to someone else)."
+        },
+        409: {
+            "description": "The document isn't 'failed' — only a failed document can be retried."
+        },
+        422: {
+            "description": "The document's failure is a 'user_error' (a problem with the file "
+            "itself, e.g. a corrupt PDF) — not retryable. Fix the file and re-upload instead."
+        },
+    },
+)
 def retry_document(
     document_id: uuid.UUID,
     db: Session = Depends(get_db),
