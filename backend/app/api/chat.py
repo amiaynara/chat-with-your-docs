@@ -15,6 +15,7 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 class AskRequest(BaseModel):
     question: str
+    doc_ids: list[uuid.UUID] | None = None
 
 
 class CitationOut(BaseModel):
@@ -32,7 +33,7 @@ class AskResponse(BaseModel):
 @router.post("/messages", response_model=AskResponse)
 def ask_question(request: AskRequest, db: Session = Depends(get_db)) -> AskResponse:
     try:
-        result = answer_question(db, request.question)
+        result = answer_question(db, request.question, doc_ids=request.doc_ids)
     except Exception:
         # Provider SDKs raise their own, inconsistent exception types for
         # configuration errors (e.g. a missing API key) that never reach our

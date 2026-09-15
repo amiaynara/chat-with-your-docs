@@ -55,16 +55,24 @@ def _snippet(content: str) -> str:
     return content[:_SNIPPET_MAX_CHARS].rstrip() + "…"
 
 
-def answer_question(db: Session, question: str) -> Answer:
+def answer_question(
+    db: Session, question: str, doc_ids: list[uuid.UUID] | None = None
+) -> Answer:
     """Retrieve relevant chunks and generate an answer grounded in them.
 
-    Single-turn for now (no conversation history) — see ticket #7/#8 for
-    multi-turn sessions and document-scoped retrieval.
+    `doc_ids`, if given (non-empty), scopes retrieval to just those documents
+    instead of the whole corpus — see ChunkRepository.search_ready for why that
+    filter is applied inside the retrieval query itself.
+
+    Single-turn for now (no conversation history) — see ticket #8 for
+    multi-turn sessions.
     """
     embedder = providers.get_embedding_provider()
     query_vector = embedder.embed([question])[0]
 
-    scored_chunks = ChunkRepository(db).search_ready(query_vector, limit=settings.retrieval_top_k)
+    scored_chunks = ChunkRepository(db).search_ready(
+        query_vector, limit=settings.retrieval_top_k, doc_ids=doc_ids
+    )
     chunks = [
         chunk
         for chunk, distance in scored_chunks

@@ -62,7 +62,12 @@ class ChunkRepository:
         self._db.add_all(chunks)
         self._db.commit()
 
-    def search_ready(self, query_embedding: list[float], limit: int) -> list[tuple[Chunk, float]]:
+    def search_ready(
+        self,
+        query_embedding: list[float],
+        limit: int,
+        doc_ids: list[uuid.UUID] | None = None,
+    ) -> list[tuple[Chunk, float]]:
         """Return the `limit` nearest READY chunks, each paired with its cosine
         distance to `query_embedding` — 0 means identical direction. (In general
         cosine distance ranges up to 2; neither real embedding model here — OpenAI's
@@ -72,13 +77,22 @@ class ChunkRepository:
         since it sums non-negative word counts.) Callers use the distance to judge
         whether a match is relevant at all, not just to rank matches against each
         other.
+
+        `doc_ids`, if given (non-empty), restricts the candidate set to those
+        documents' chunks *inside this same query* — applied in the WHERE clause
+        before ORDER BY/LIMIT, not as a filter over an already-fetched unscoped
+        top-`limit` result. That distinction matters: post-filtering an unscoped
+        top-k could silently return fewer than `limit` relevant scoped chunks (or
+        none at all) whenever other documents' chunks are more similar to the
+        query and crowd the scoped ones out of that top-k window.
         """
         distance = Chunk.embedding.cosine_distance(query_embedding).label("distance")
         stmt = (
             select(Chunk, distance)
             .join(Document, Chunk.document_id == Document.id)
             .where(Document.status == DocumentStatus.READY)
-            .order_by(distance)
-            .limit(limit)
         )
+        if doc_ids:
+            stmt = stmt.where(Chunk.document_id.in_(doc_ids))
+        stmt = stmt.order_by(distance).limit(limit)
         return [(chunk, dist) for chunk, dist in self._db.execute(stmt).all()]

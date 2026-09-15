@@ -29,6 +29,35 @@ describe('askQuestion', () => {
     expect(JSON.parse(init.body)).toEqual({ question: 'What is the secret code?' })
   })
 
+  it('includes doc_ids in the request body when scoping to specific documents', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ answer: 'Wobble-42.', citations: [] }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await askQuestion('What is the secret code?', ['doc-1', 'doc-2'])
+
+    const [, init] = fetchMock.mock.calls[0]
+    expect(JSON.parse(init.body)).toEqual({
+      question: 'What is the secret code?',
+      doc_ids: ['doc-1', 'doc-2'],
+    })
+  })
+
+  it('omits doc_ids from the request body when no documents are scoped', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ answer: 'Wobble-42.', citations: [] }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await askQuestion('What is the secret code?', [])
+
+    const [, init] = fetchMock.mock.calls[0]
+    expect(JSON.parse(init.body)).toEqual({ question: 'What is the secret code?' })
+  })
+
   it('throws AskError with the server-provided detail on failure', async () => {
     vi.stubGlobal(
       'fetch',

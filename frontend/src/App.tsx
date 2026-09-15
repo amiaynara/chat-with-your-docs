@@ -9,7 +9,26 @@ const PENDING_STATUSES: Document['status'][] = ['queued', 'processing']
 
 function App() {
   const [documents, setDocuments] = useState<Document[]>([])
+  const [selectedDocIds, setSelectedDocIds] = useState<Set<string>>(new Set())
   const pollTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function toggleSelectedDocument(id: string) {
+    setSelectedDocIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
+  // Dropped once a document no longer exists (e.g. deleted), rather than
+  // silently scoping a future question to a document id that's gone.
+  const scopedDocIds = documents
+    .filter((document) => selectedDocIds.has(document.id))
+    .map((document) => document.id)
 
   const refresh = useCallback(function poll() {
     if (pollTimeout.current) clearTimeout(pollTimeout.current)
@@ -43,12 +62,23 @@ function App() {
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-medium text-neutral-600">Documents</h2>
         <UploadForm onUploaded={refresh} />
-        <DocumentList documents={documents} onDeleted={refresh} />
+        <DocumentList
+          documents={documents}
+          onDeleted={refresh}
+          selectedIds={selectedDocIds}
+          onToggleSelect={toggleSelectedDocument}
+        />
       </section>
 
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-medium text-neutral-600">Ask a question</h2>
-        <Chat />
+        {scopedDocIds.length > 0 && (
+          <p className="text-xs text-neutral-500">
+            Asking within {scopedDocIds.length} selected document
+            {scopedDocIds.length > 1 ? 's' : ''}.
+          </p>
+        )}
+        <Chat docIds={scopedDocIds} />
       </section>
     </main>
   )

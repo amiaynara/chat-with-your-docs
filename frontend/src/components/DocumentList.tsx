@@ -11,9 +11,16 @@ const STATUS_STYLES: Record<Document['status'], string> = {
 interface DocumentListProps {
   documents: Document[]
   onDeleted: () => void
+  selectedIds?: Set<string>
+  onToggleSelect?: (id: string) => void
 }
 
-export function DocumentList({ documents, onDeleted }: DocumentListProps) {
+export function DocumentList({
+  documents,
+  onDeleted,
+  selectedIds = new Set(),
+  onToggleSelect = () => {},
+}: DocumentListProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -46,6 +53,12 @@ export function DocumentList({ documents, onDeleted }: DocumentListProps) {
             key={document.id}
             className="flex items-center justify-between gap-3 rounded-md border border-neutral-200 px-3 py-2"
           >
+            <input
+              type="checkbox"
+              checked={selectedIds.has(document.id)}
+              onChange={() => onToggleSelect(document.id)}
+              aria-label={`Scope questions to ${document.filename}`}
+            />
             <span className="truncate text-sm text-neutral-800">{document.filename}</span>
             <span className="flex items-center gap-2">
               <span

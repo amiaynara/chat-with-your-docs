@@ -85,4 +85,44 @@ describe('DocumentList', () => {
     expect(await screen.findByText(/failed to delete/i)).toBeInTheDocument()
     expect(onDeleted).not.toHaveBeenCalled()
   })
+
+  it('lets the user select a document to scope questions to', async () => {
+    const onToggleSelect = vi.fn()
+
+    render(
+      <DocumentList
+        documents={[makeDocument({ id: '1', filename: 'a.txt' })]}
+        onDeleted={() => {}}
+        selectedIds={new Set()}
+        onToggleSelect={onToggleSelect}
+      />,
+    )
+
+    await userEvent.click(screen.getByRole('checkbox'))
+
+    expect(onToggleSelect).toHaveBeenCalledWith('1')
+  })
+
+  it('shows a document as checked when it is selected', () => {
+    render(
+      <DocumentList
+        documents={[makeDocument({ id: '1', filename: 'a.txt' })]}
+        onDeleted={() => {}}
+        selectedIds={new Set(['1'])}
+        onToggleSelect={() => {}}
+      />,
+    )
+
+    expect(screen.getByRole('checkbox')).toBeChecked()
+  })
+
+  it('treats no document as selected when selection props are omitted', async () => {
+    render(<DocumentList documents={[makeDocument({ id: '1' })]} onDeleted={() => {}} />)
+
+    expect(screen.getByRole('checkbox')).not.toBeChecked()
+
+    // No onToggleSelect was passed — clicking must not throw, falling back to
+    // the default no-op.
+    await userEvent.click(screen.getByRole('checkbox'))
+  })
 })

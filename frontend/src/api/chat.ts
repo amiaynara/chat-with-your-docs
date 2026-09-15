@@ -14,12 +14,17 @@ export interface AskResult {
   citations: Citation[]
 }
 
-export async function askQuestion(question: string): Promise<AskResult> {
+export async function askQuestion(question: string, docIds?: string[]): Promise<AskResult> {
+  const body: { question: string; doc_ids?: string[] } = { question }
+  if (docIds && docIds.length > 0) {
+    body.doc_ids = docIds
+  }
+
   const response = await fetch(`${API_BASE_URL}/chat/messages`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify(body),
   })
 
   if (!response.ok) {

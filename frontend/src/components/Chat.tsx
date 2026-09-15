@@ -13,7 +13,11 @@ interface OpenCitation {
   citationIndex: number
 }
 
-export function Chat() {
+interface ChatProps {
+  docIds?: string[]
+}
+
+export function Chat({ docIds = [] }: ChatProps) {
   const [question, setQuestion] = useState('')
   const [turns, setTurns] = useState<Turn[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -28,7 +32,7 @@ export function Chat() {
     setError(null)
     setIsAsking(true)
     try {
-      const result = await askQuestion(trimmed)
+      const result = await askQuestion(trimmed, docIds)
       setTurns((prev) => [
         ...prev,
         { question: trimmed, answer: result.answer, citations: result.citations },

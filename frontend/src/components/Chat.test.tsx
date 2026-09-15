@@ -25,6 +25,19 @@ describe('Chat', () => {
     expect(screen.getByText('What is the secret launch code?')).toBeInTheDocument()
   })
 
+  it('passes the docIds prop through to askQuestion when scoping a question', async () => {
+    const askSpy = vi
+      .spyOn(chatApi, 'askQuestion')
+      .mockResolvedValue({ answer: 'An answer.', citations: [] })
+
+    render(<Chat docIds={['doc-1', 'doc-2']} />)
+
+    await userEvent.type(screen.getByPlaceholderText(/ask a question/i), 'A question?')
+    await userEvent.click(screen.getByRole('button', { name: /ask/i }))
+
+    expect(askSpy).toHaveBeenCalledWith('A question?', ['doc-1', 'doc-2'])
+  })
+
   it('renders markdown formatting in the answer instead of raw syntax', async () => {
     vi.spyOn(chatApi, 'askQuestion').mockResolvedValue({
       answer: '**Category:** Negligible\n\n- item one\n- item two',
