@@ -72,12 +72,15 @@ uv run python -m app.eval
 ```
 
 Also runs as its own CI job on every push (`eval` in `.github/workflows/ci.yml`), publishing the
-same report to the job summary — but only when `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and
-`COHERE_API_KEY` are configured as repo secrets, since it calls those real providers (the
-pgvector schema is fixed at OpenAI's 1536-dim embedding size, so this can't run against the free
-local embedding provider). Without those secrets configured, the job is skipped, not failed — as
-shipped here, that's the current state, so the harness runs manually but not yet in this repo's
-actual CI until those three secrets are added.
+same report to the job summary — but only when `OPENAI_API_KEY`, `GOOGLE_API_KEY`, and
+`COHERE_API_KEY` are configured as repo secrets, since two of those three calls are unavoidable:
+the pgvector schema is fixed at OpenAI's 1536-dim embedding size (so this can't run against the
+free local embedding provider), and Cohere is the only reranker this app implements (so the
+harness's vector-vs-vector+rerank comparison needs it too). The LLM-as-judge step uses the free
+`LLM_PROVIDER=google` option instead of the paid Anthropic default specifically to avoid a third
+paid secret. Without those three secrets configured, the job is skipped, not failed — as shipped
+here, that's the current state, so the harness runs manually but not yet in this repo's actual CI
+until those secrets are added.
 
 ## Frontend development (without Docker)
 
