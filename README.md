@@ -60,6 +60,17 @@ exercised by the `integration`-marked tests, which need `postgres` and `minio` r
 uv run pytest -m "integration or not integration" --cov=app --cov-report=term-missing
 ```
 
+### Evaluation harness
+
+Measures retrieval hit-rate and LLM-as-judge faithfulness/relevancy against a small golden Q&A
+set, run through both the vector-only and vector+rerank pipeline modes so the reranker's
+contribution is a measured number, not just an assumption. See `backend/app/eval/`.
+
+```
+cd backend
+uv run python -m app.eval
+```
+
 ## Frontend development (without Docker)
 
 Requires Node >= 22 (see `frontend/.nvmrc`).

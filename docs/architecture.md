@@ -12,8 +12,8 @@ published artifact from this session, if you have that link.
 
 | Style | Meaning |
 | --- | --- |
-| 🟢 solid green | **Built** — tickets 1–11, closed |
-| 🟠 dashed amber | **Planned** — tickets 12–16, `ready-for-agent`, not yet built |
+| 🟢 solid green | **Built** — tickets 1–12, closed |
+| 🟠 dashed amber | **Planned** — tickets 13–16, `ready-for-agent`, not yet built |
 | 🔵 blue | External AI provider (Anthropic, OpenAI) |
 | ⬜ grey | Data store / infrastructure |
 
@@ -77,7 +77,8 @@ flowchart TB
     subgraph SUPPORT["Supporting systems — build-time & quality, not on the request path"]
         direction LR
         S1["Observability · #13"]:::planned
-        S2["Evaluation harness · #12 #14"]:::planned
+        S2["Evaluation harness · #12"]:::built
+        S2b["Eval harness in CI · #14"]:::planned
         S3["CI/CD — lint, tests, 100% cov"]:::built
     end
 
@@ -128,11 +129,13 @@ production target — dashed throughout, because none of it is deployed.
 | 9 | #10 | Structure-aware chunking upgrade | 🟢 Built | Worker |
 | 10 | #11 | Hybrid retrieval (vector + keyword) | 🟢 Built | Retrieval & Answer, Data stores |
 | 11 | #12 | Optional reranker toggle | 🟢 Built | Retrieval & Answer, AI providers |
-| 12 | #13 | Evaluation harness | 🟠 Planned | Evaluation & Quality |
+| 12 | #13 | Evaluation harness | 🟢 Built | Evaluation & Quality |
 | 13 | #14 | In-app trace panel + structured logging | 🟠 Planned | Client, Observability |
 | 14 | #15 | CI: add eval harness job | 🟠 Planned | CI/CD, Evaluation & Quality |
 | 15 | #16 | Deployment follow-up backlog | 🟠 Planned | Production target (AWS) |
 | 16 | #17 | Final README + submission polish | 🟠 Planned | — |
 
-16 tickets · 11 built · 5 planned. Zero open `needs-triage`/`needs-info` items — every ticket
-above is `ready-for-agent` in the tracker.
+16 tickets · 12 built · 4 planned. Zero open `needs-triage`/`needs-info` items — every ticket
+above is `ready-for-agent` in the tracker. (Two further tickets, #17 API documentation and #18
+document failure taxonomy + retry, were opened after this plan was frozen and aren't reflected
+in the diagram/ledger above.)
