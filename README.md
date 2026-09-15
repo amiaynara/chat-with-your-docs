@@ -6,15 +6,17 @@ Backend: FastAPI + Celery (Python). Frontend: Vite + React + TypeScript + Tailwi
 
 ## Running locally
 
-Document ingestion (embeddings) and Q&A (the LLM) call out to OpenAI and Anthropic. Copy
-`backend/.env.example` to `backend/.env` and set `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` if you want
-uploads to actually reach `ready` instead of failing with a clear "missing credentials" error —
-`docker compose up` still works fully without them (upload, validation, and status tracking all
-work; only the embedding/answer step needs real keys).
+Document ingestion (embeddings) runs fully key-free by default — `EMBEDDING_PROVIDER=local` runs
+a local embedding model (`sentence-transformers`, no API key, no cost, comparable retrieval
+quality) out of the box, no setup required. Q&A (the LLM) still calls out to Anthropic by
+default. Copy `backend/.env.example` to `backend/.env` and set `ANTHROPIC_API_KEY` if you want
+questions to actually get answered instead of failing with a clear "missing credentials" error —
+`docker compose up` still works fully without it (upload, ingestion, and status tracking all
+work; only the answer step needs a real key).
 
-No OpenAI key/credits? Set `EMBEDDING_PROVIDER=local` instead — ingestion then runs a local
-embedding model (`sentence-transformers`, no API key, no cost, comparable retrieval quality).
-See `docs/embeddings.md` for the tradeoffs and how to switch.
+Want higher-quality (paid, hosted) embeddings instead of the local default? Set
+`EMBEDDING_PROVIDER=openai` and `OPENAI_API_KEY` — see `docs/embeddings.md` for the tradeoffs and
+why this is a real schema change, not just a config flip.
 
 No Anthropic key/budget? Set `LLM_PROVIDER=google` instead — chat then answers via Google
 Gemini, which has a real (rate-limited) free tier. See `docs/llm-providers.md`.
@@ -72,15 +74,14 @@ uv run python -m app.eval
 ```
 
 Also runs as its own CI job on every push (`eval` in `.github/workflows/ci.yml`), publishing the
-same report to the job summary — but only when `OPENAI_API_KEY`, `GOOGLE_API_KEY`, and
-`COHERE_API_KEY` are configured as repo secrets, since two of those three calls are unavoidable:
-the pgvector schema is fixed at OpenAI's 1536-dim embedding size (so this can't run against the
-free local embedding provider), and Cohere is the only reranker this app implements (so the
-harness's vector-vs-vector+rerank comparison needs it too). The LLM-as-judge step uses the free
-`LLM_PROVIDER=google` option instead of the paid Anthropic default specifically to avoid a third
-paid secret. Without those three secrets configured, the job is skipped, not failed — as shipped
-here, that's the current state, so the harness runs manually but not yet in this repo's actual CI
-until those secrets are added.
+same report to the job summary — but only when `GOOGLE_API_KEY` and `COHERE_API_KEY` are
+configured as repo secrets. Embeddings need no secret at all (`EMBEDDING_PROVIDER` defaults to
+`local`, which the pgvector schema is provisioned to match — see `docs/embeddings.md`). The
+LLM-as-judge step uses the free `LLM_PROVIDER=google` option instead of the paid Anthropic
+default, so the only unavoidable paid dependency is Cohere — it's the only reranker this app
+implements, needed for the harness's vector-vs-vector+rerank comparison. Without those two
+secrets configured, the job is skipped, not failed — as shipped here, that's the current state,
+so the harness runs manually but not yet in this repo's actual CI until they're added.
 
 ## Frontend development (without Docker)
 

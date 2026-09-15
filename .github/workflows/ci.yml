@@ -109,28 +109,25 @@ jobs:
     # measured-on-every-push number, not just something a developer might
     # remember to run manually.
     #
-    # Unlike the rest of this repo's CI, this can't run against fakes. Two of its
-    # three real-provider calls are genuinely unavoidable:
-    #   - Embeddings: the pgvector schema is a fixed 1536-dim column (see
-    #     migration 0002 and docs/embeddings.md) — EMBEDDING_PROVIDER=local
-    #     produces 384-dim vectors and simply doesn't fit it without a schema
-    #     migration this ticket doesn't do. Needs OPENAI_API_KEY.
-    #   - Reranking: the harness runs the golden set through both vector-only
-    #     and vector+rerank modes to measure the reranker's actual contribution
-    #     (the whole point of the "rerank delta" it reports) — Cohere is the
-    #     only RerankerProvider this app implements (issue #12), no free/local
+    # Unlike the rest of this repo's CI, this can't run against fakes — it needs two
+    # real providers:
+    #   - LLM-as-judge: EMBEDDING_PROVIDER defaults to "local" (see app/config.py),
+    #     so embeddings need no real provider/key at all here. Answering/judging
+    #     still needs a real LLM; this job uses the free option already built in
+    #     (LLM_PROVIDER=google — see docs/llm-providers.md) instead of the paid
+    #     Anthropic default, specifically to avoid needing a paid secret for this.
+    #     Needs GOOGLE_API_KEY.
+    #   - Reranking: the harness runs the golden set through both vector-only and
+    #     vector+rerank modes to measure the reranker's actual contribution (the
+    #     whole point of the "rerank delta" it reports) — Cohere is the only
+    #     RerankerProvider this app implements (issue #12), no free/local
     #     alternative exists. Needs COHERE_API_KEY.
-    # The LLM-as-judge step, by contrast, has a free option already built in
-    # (LLM_PROVIDER=google — see docs/llm-providers.md), used here instead of
-    # the paid Anthropic default specifically so this job needs one fewer paid
-    # secret. Needs GOOGLE_API_KEY.
     #
-    # Skipped entirely when those aren't configured as repo secrets — keeping
-    # CI green (and free) on a fork/clone without them, same as the rest of
-    # this project's "works without paid keys" default. Configure
-    # OPENAI_API_KEY, GOOGLE_API_KEY, and COHERE_API_KEY as repository secrets
-    # to turn this job on.
-    if: ${{ secrets.OPENAI_API_KEY != '' && secrets.GOOGLE_API_KEY != '' && secrets.COHERE_API_KEY != '' }}
+    # Skipped entirely when those aren't configured as repo secrets — keeping CI
+    # green (and free) on a fork/clone without them, same as the rest of this
+    # project's "works without paid keys" default. Configure GOOGLE_API_KEY and
+    # COHERE_API_KEY as repository secrets to turn this job on.
+    if: ${{ secrets.GOOGLE_API_KEY != '' && secrets.COHERE_API_KEY != '' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -151,7 +148,6 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5433/app
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       LLM_PROVIDER: google
       GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
       COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}

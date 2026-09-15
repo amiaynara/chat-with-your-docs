@@ -26,42 +26,47 @@ dependency (`sentence-transformers` + a CPU build of `torch`) and a one-time mod
 
 ## Switching providers
 
-Set in `backend/.env` (or `.env.docker` for defaults shared by everyone):
+`local` is the default — the `chunks.embedding` pgvector column is provisioned at its 384-dim
+width by the baseline migration, so this is what a fresh clone runs against out of the box, no
+key required. Set in `backend/.env` (or `.env.docker` for defaults shared by everyone) to switch
+to OpenAI instead:
 
 ```
-EMBEDDING_PROVIDER=local          # or "openai" (default)
-LOCAL_EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
-LOCAL_EMBEDDING_MODEL_VERSION=1
+EMBEDDING_PROVIDER=openai         # or "local" (default)
+EMBEDDING_MODEL=text-embedding-3-small
+EMBEDDING_DIMENSIONS=1536
 ```
 
 No code change needed — `app/providers.py::get_embedding_provider()` is the single place that
 decides which concrete class to construct; every caller (`ingestion/tasks.py`,
 `qa/answering.py`) only ever depends on the `EmbeddingProvider` protocol.
 
-**The one thing that isn't free to change: vector size.** `text-embedding-3-small` produces
-1536-dim vectors; `bge-small-en-v1.5` produces 384. The `chunks.embedding` column is a
-fixed-width pgvector column (`Vector(settings.embedding_dimensions)`), provisioned once via an
-Alembic migration — it can't silently hold both sizes. Each provider reports its own real
-`dimensions` rather than trusting config: `OpenAIEmbeddingProvider` looks it up from a known
-model → dimension table (`text-embedding-3-small` → 1536, `text-embedding-3-large` → 3072,
-`text-embedding-ada-002` → 1536; an unrecognized `EMBEDDING_MODEL` raises immediately), and
-`LocalEmbeddingProvider` reads it straight off the loaded model. `get_embedding_provider()` then
-cross-checks that real value against `EMBEDDING_DIMENSIONS` and raises a `RuntimeError`
-immediately (before anything tries to embed) naming exactly what's mismatched, rather than
-letting it surface later as an opaque pgvector error inside a Celery task.
+**The one thing that isn't free to change: vector size.** `bge-small-en-v1.5` produces 384-dim
+vectors; `text-embedding-3-small` produces 1536. The `chunks.embedding` column is a fixed-width
+pgvector column, provisioned at 384 by the baseline migration
+(`alembic/versions/0002_documents_and_chunks.py` — a hardcoded literal, deliberately *not* read
+from `settings.embedding_dimensions` at migration-run time, so the schema's real width can't
+silently drift out from under whatever a developer's local `.env` happens to say; see that
+migration's own comment). `EMBEDDING_DIMENSIONS` is what `get_embedding_provider()` cross-checks
+the configured provider's own real `dimensions` against before constructing it — catching a
+provider/setting mismatch immediately with a clear `RuntimeError`, rather than letting it surface
+later as an opaque pgvector error inside a Celery task — but changing that setting alone does
+**not** change the actual column width; only a migration does that.
 
-So switching providers on an existing database is a deliberate three-step operation, not a
-config-only flip:
-1. Update `EMBEDDING_DIMENSIONS` to match the new provider (1536 for OpenAI, 384 for
-   `bge-small-en-v1.5`; a different local model may differ — its `dimensions` is inferred from
-   the loaded model itself, not hardcoded).
-2. Write and run a migration resizing the `chunks.embedding` column.
+So switching from the default (`local`, 384) to `openai` (1536) — on *any* database, fresh or
+not, since the column width comes from the migration, not from config — is a deliberate
+three-step operation:
+1. Update `EMBEDDING_DIMENSIONS` to match the new provider (1536 for OpenAI's
+   `text-embedding-3-small`; a different model may differ — each provider reports its own real
+   `dimensions`, inferred from the loaded model for `LocalEmbeddingProvider` and looked up from a
+   known model → dimension table for `OpenAIEmbeddingProvider`).
+2. Write and run a migration resizing the `chunks.embedding` column to match.
 3. Re-ingest existing documents — old chunks' vectors were produced by a different model and are
    not comparable to new ones. (Every chunk already records `embedding_model`/`embedding_version`
    for exactly this reason — the "indexing contract" mentioned in issue #1.)
 
-On a fresh/empty database (nothing ingested yet), steps 2–3 are moot — just set both env vars
-before the first upload.
+On a genuinely empty database (nothing ingested yet), step 3 is moot, but step 2 (the migration)
+is never optional — there is no config-only way to get a different column width.
 
 ## Local model caching (Docker)
 

@@ -18,7 +18,13 @@ down_revision: str | None = "0001"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-EMBEDDING_DIMENSIONS = 1536
+# Matches LocalEmbeddingProvider's bge-small-en-v1.5 output (app/config.py's
+# EMBEDDING_PROVIDER default) — the pgvector column is fixed-width, so this is a
+# real schema commitment, not just a default value. See docs/embeddings.md for
+# what switching to the 1536-dim OpenAI provider actually requires (a new
+# migration to resize this column plus re-indexing existing chunks, not just an
+# env var flip).
+EMBEDDING_DIMENSIONS = 384
 
 
 def upgrade() -> None:

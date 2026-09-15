@@ -38,15 +38,19 @@ class Settings(BaseSettings):
     google_llm_model: str = "gemini-3.6-flash"
 
     # Which EmbeddingProvider implementation app.providers.get_embedding_provider()
-    # constructs — "openai" (hosted, needs OPENAI_API_KEY + credits) or "local" (runs
-    # on-machine via sentence-transformers, no key/cost, slightly lower retrieval
-    # quality). See docs/embeddings.md. Swapping this is a config-only change; the two
-    # models produce differently-sized vectors, so embedding_dimensions below must be
-    # updated to match and existing chunks re-indexed — see that doc for why.
-    embedding_provider: str = "openai"
+    # constructs — "local" (runs on-machine via sentence-transformers, no key/cost,
+    # roughly at parity on retrieval quality — see docs/embeddings.md) or "openai"
+    # (hosted, needs OPENAI_API_KEY + credits). "local" is the default so this app
+    # runs fully key-free out of the box; the `chunks.embedding` pgvector column
+    # (alembic/versions/0002_documents_and_chunks.py) is provisioned at this
+    # provider's 384-dim width to match. Swapping to "openai" is a config-only code
+    # change but a real *data* migration: embedding_dimensions below must be updated
+    # to match (1536), the column resized via a new migration, and existing chunks
+    # re-indexed — see docs/embeddings.md for why.
+    embedding_provider: str = "local"
     embedding_model: str = "text-embedding-3-small"
     embedding_model_version: str = "1"
-    embedding_dimensions: int = 1536
+    embedding_dimensions: int = 384
 
     local_embedding_model: str = "BAAI/bge-small-en-v1.5"
     local_embedding_model_version: str = "1"
