@@ -4,7 +4,7 @@ from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import DateTime, Enum, ForeignKey, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.config import settings
@@ -73,3 +73,35 @@ class Chunk(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     document: Mapped[Document] = relationship(back_populates="chunks")
+
+
+class MessageRole(enum.StrEnum):
+    USER = "user"
+    ASSISTANT = "assistant"
+
+
+class Message(Base):
+    """One turn of a session's chat transcript — a user question or an
+    assistant answer. Keyed by the same raw session-cookie string used by
+    Document.session_id (there's no separate session/account entity), so
+    history is scoped to the anonymous session that asked it.
+    """
+
+    __tablename__ = "messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id: Mapped[str] = mapped_column(Text, index=True, nullable=False)
+    role: Mapped[MessageRole] = mapped_column(
+        Enum(
+            MessageRole,
+            name="message_role",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=False,
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    # Citation metadata (see qa/answering.py::Citation), serialized as plain
+    # dicts — only ever set on an assistant message; null for a user message
+    # or an assistant message with no supporting citations.
+    citations: Mapped[list[dict] | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

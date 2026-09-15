@@ -25,6 +25,68 @@ describe('Chat', () => {
     expect(screen.getByText('What is the secret launch code?')).toBeInTheDocument()
   })
 
+  it('loads and displays prior conversation history on mount', async () => {
+    vi.spyOn(chatApi, 'getMessageHistory').mockResolvedValue([
+      { role: 'user', content: 'What is the secret launch code?', citations: null },
+      {
+        role: 'assistant',
+        content: 'The secret launch code is Wobble-42.',
+        citations: [
+          {
+            document_id: 'doc-1',
+            filename: 'notes.txt',
+            location_ref: 'document',
+            snippet: 'Wobble-42.',
+          },
+        ],
+      },
+    ])
+
+    render(<Chat />)
+
+    expect(await screen.findByText('What is the secret launch code?')).toBeInTheDocument()
+    expect(screen.getByText(/wobble-42/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '1' })).toBeInTheDocument()
+  })
+
+  it('shows a user message with no reply yet, rather than dropping it', async () => {
+    vi.spyOn(chatApi, 'getMessageHistory').mockResolvedValue([
+      { role: 'user', content: 'An unanswered question.', citations: null },
+      { role: 'user', content: 'A question with an answer.', citations: null },
+      { role: 'assistant', content: 'Here is the answer.', citations: null },
+      { role: 'user', content: 'A trailing unanswered question.', citations: null },
+    ])
+
+    render(<Chat />)
+
+    expect(await screen.findByText('An unanswered question.')).toBeInTheDocument()
+    expect(screen.getByText('A question with an answer.')).toBeInTheDocument()
+    expect(screen.getByText('Here is the answer.')).toBeInTheDocument()
+    expect(screen.getByText('A trailing unanswered question.')).toBeInTheDocument()
+  })
+
+  it('ignores an assistant message with no preceding user question', async () => {
+    vi.spyOn(chatApi, 'getMessageHistory').mockResolvedValue([
+      { role: 'assistant', content: 'An orphan reply with no question.', citations: null },
+      { role: 'user', content: 'A real question.', citations: null },
+      { role: 'assistant', content: 'A real answer.', citations: null },
+    ])
+
+    render(<Chat />)
+
+    expect(await screen.findByText('A real question.')).toBeInTheDocument()
+    expect(screen.getByText('A real answer.')).toBeInTheDocument()
+    expect(screen.queryByText('An orphan reply with no question.')).not.toBeInTheDocument()
+  })
+
+  it('does not crash when loading conversation history fails', async () => {
+    vi.spyOn(chatApi, 'getMessageHistory').mockRejectedValue(new Error('network down'))
+
+    render(<Chat />)
+
+    expect(await screen.findByPlaceholderText(/ask a question/i)).toBeInTheDocument()
+  })
+
   it('passes the docIds prop through to askQuestion when scoping a question', async () => {
     const askSpy = vi
       .spyOn(chatApi, 'askQuestion')

@@ -14,6 +14,12 @@ export interface AskResult {
   citations: Citation[]
 }
 
+export interface HistoryMessage {
+  role: 'user' | 'assistant'
+  content: string
+  citations: Citation[] | null
+}
+
 export async function askQuestion(question: string, docIds?: string[]): Promise<AskResult> {
   const body: { question: string; doc_ids?: string[] } = { question }
   if (docIds && docIds.length > 0) {
@@ -33,4 +39,12 @@ export async function askQuestion(question: string, docIds?: string[]): Promise<
   }
 
   return (await response.json()) as AskResult
+}
+
+export async function getMessageHistory(): Promise<HistoryMessage[]> {
+  const response = await fetch(`${API_BASE_URL}/chat/messages`, { credentials: 'include' })
+  if (!response.ok) {
+    throw new Error(`Failed to load message history: ${response.status}`)
+  }
+  return response.json()
 }

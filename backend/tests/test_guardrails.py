@@ -4,19 +4,12 @@ Refusal (no supporting passage / out-of-corpus) is asserted to be a deterministi
 pre-LLM decision — not something the LLM is trusted to judge — by checking
 `fake_llm_provider.last_system is None` after a refusal: the LLM was never even
 called, so there's nothing for it to hallucinate around.
+
+The empty-corpus case (no documents uploaded at all) is covered by
+tests/test_chat_history.py instead: ticket #8 gives it its own, more specific
+"upload a document" message via a check in api/chat.py, ahead of ever reaching
+answer_question's generic no-evidence guardrail tested below.
 """
-
-
-def test_no_supporting_passage_triggers_a_refusal_without_calling_the_llm(
-    client, fake_llm_provider
-):
-    response = client.post("/chat/messages", json={"question": "What is the secret launch code?"})
-
-    assert response.status_code == 200
-    body = response.json()
-    assert "don't have" in body["answer"].lower()
-    assert body["citations"] == []
-    assert fake_llm_provider.last_system is None
 
 
 def test_out_of_corpus_question_declines_instead_of_answering_from_general_knowledge(

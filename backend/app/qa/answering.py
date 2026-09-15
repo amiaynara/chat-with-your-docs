@@ -56,7 +56,10 @@ def _snippet(content: str) -> str:
 
 
 def answer_question(
-    db: Session, question: str, doc_ids: list[uuid.UUID] | None = None
+    db: Session,
+    question: str,
+    doc_ids: list[uuid.UUID] | None = None,
+    history: list[Message] | None = None,
 ) -> Answer:
     """Retrieve relevant chunks and generate an answer grounded in them.
 
@@ -64,8 +67,10 @@ def answer_question(
     instead of the whole corpus — see ChunkRepository.search_ready for why that
     filter is applied inside the retrieval query itself.
 
-    Single-turn for now (no conversation history) — see ticket #8 for
-    multi-turn sessions.
+    `history`, if given, is prepended to the LLM call as prior conversation
+    turns (oldest first) so a follow-up question can reference them — the
+    caller (api/chat.py) is responsible for loading and bounding it from
+    persisted session history; this function only ever forwards it.
     """
     embedder = providers.get_embedding_provider()
     query_vector = embedder.embed([question])[0]
@@ -85,7 +90,8 @@ def answer_question(
 
     system = _SYSTEM_TEMPLATE.format(context=context)
     llm = providers.get_llm_provider()
-    result = llm.generate(system=system, messages=[Message(role="user", content=question)])
+    messages = [*(history or []), Message(role="user", content=question)]
+    result = llm.generate(system=system, messages=messages)
 
     # Citations are the chunks actually placed in the prompt's <context> block above
     # — i.e. exactly the passages the model had available to ground its answer in.

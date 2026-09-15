@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Chunk, Document, DocumentStatus
+from app.models import Chunk, Document, DocumentStatus, Message, MessageRole
 
 
 class DocumentRepository:
@@ -96,3 +96,30 @@ class ChunkRepository:
             stmt = stmt.where(Chunk.document_id.in_(doc_ids))
         stmt = stmt.order_by(distance).limit(limit)
         return [(chunk, dist) for chunk, dist in self._db.execute(stmt).all()]
+
+
+class MessageRepository:
+    def __init__(self, db: Session) -> None:
+        self._db = db
+
+    def list_for_session(self, session_id: str) -> list[Message]:
+        stmt = (
+            select(Message)
+            .where(Message.session_id == session_id)
+            .order_by(Message.created_at.asc())
+        )
+        return list(self._db.scalars(stmt).all())
+
+    def create(
+        self,
+        *,
+        session_id: str,
+        role: MessageRole,
+        content: str,
+        citations: list[dict] | None = None,
+    ) -> Message:
+        message = Message(session_id=session_id, role=role, content=content, citations=citations)
+        self._db.add(message)
+        self._db.commit()
+        self._db.refresh(message)
+        return message

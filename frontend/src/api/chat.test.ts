@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { askQuestion, AskError } from './chat'
+import { askQuestion, AskError, getMessageHistory } from './chat'
 
 describe('askQuestion', () => {
   afterEach(() => {
@@ -85,5 +85,39 @@ describe('askQuestion', () => {
     )
 
     await expect(askQuestion('anything')).rejects.toThrow('Failed to get an answer: 500')
+  })
+})
+
+describe('getMessageHistory', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('fetches the session message history with credentials included', async () => {
+    const messages = [
+      { role: 'user', content: 'What is the secret code?', citations: null },
+      {
+        role: 'assistant',
+        content: 'Wobble-42.',
+        citations: [
+          { document_id: 'doc-1', filename: 'notes.txt', location_ref: 'document', snippet: 'x' },
+        ],
+      },
+    ]
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => messages })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await getMessageHistory()
+
+    expect(result).toEqual(messages)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('http://localhost:8000/chat/messages')
+    expect(init).toEqual({ credentials: 'include' })
+  })
+
+  it('throws when the response is not ok', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }))
+
+    await expect(getMessageHistory()).rejects.toThrow('Failed to load message history: 500')
   })
 })

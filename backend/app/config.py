@@ -77,5 +77,12 @@ class Settings(BaseSettings):
     # empty or just doesn't cover the question.
     retrieval_relevance_threshold: float = 0.9
 
+    # How many of a session's most recent messages (user+assistant combined) are
+    # included as conversation history in the prompt for a follow-up question — a
+    # starting hypothesis, not locked (same framing as chunk_overlap_ratio/
+    # retrieval_relevance_threshold above): keeps prompt size/cost bounded rather
+    # than growing unboundedly over a long-running conversation.
+    chat_history_max_messages: int = 10
+
 
 settings = Settings()

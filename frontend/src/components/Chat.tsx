@@ -1,11 +1,35 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { AskError, askQuestion, type Citation } from '../api/chat'
+import { AskError, askQuestion, getMessageHistory, type Citation, type HistoryMessage } from '../api/chat'
 
 interface Turn {
   question: string
   answer: string
   citations: Citation[]
+}
+
+// Messages come back as a flat, role-tagged list; a "turn" is one user
+// question paired with the assistant reply that followed it. A user message
+// with no reply yet (e.g. the assistant call failed before persisting one) is
+// still shown, with an empty answer, rather than silently dropped.
+function groupIntoTurns(messages: HistoryMessage[]): Turn[] {
+  const turns: Turn[] = []
+  let pending: Turn | null = null
+
+  for (const message of messages) {
+    if (message.role === 'user') {
+      if (pending) turns.push(pending)
+      pending = { question: message.content, answer: '', citations: [] }
+    } else if (pending) {
+      pending.answer = message.content
+      pending.citations = message.citations ?? []
+      turns.push(pending)
+      pending = null
+    }
+  }
+  if (pending) turns.push(pending)
+
+  return turns
 }
 
 interface OpenCitation {
@@ -23,6 +47,15 @@ export function Chat({ docIds = [] }: ChatProps) {
   const [error, setError] = useState<string | null>(null)
   const [isAsking, setIsAsking] = useState(false)
   const [openCitation, setOpenCitation] = useState<OpenCitation | null>(null)
+
+  useEffect(() => {
+    getMessageHistory()
+      .then((messages) => setTurns(groupIntoTurns(messages)))
+      .catch(() => {
+        // No history to restore, or the request failed — either way, starting
+        // from an empty conversation is a safe, non-crashing fallback.
+      })
+  }, [])
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
