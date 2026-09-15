@@ -51,6 +51,7 @@ from app.db import Base, engine  # noqa: E402
 from app.main import app  # noqa: E402
 from tests.fakes.embeddings import FakeEmbeddingProvider  # noqa: E402
 from tests.fakes.llm import FakeLLMProvider  # noqa: E402
+from tests.fakes.reranker import FakeRerankerProvider  # noqa: E402
 from tests.fakes.storage import FakeObjectStorage  # noqa: E402
 
 celery_app.conf.task_always_eager = True
@@ -121,6 +122,13 @@ def fake_embedding_provider(monkeypatch: pytest.MonkeyPatch) -> FakeEmbeddingPro
 def fake_llm_provider(monkeypatch: pytest.MonkeyPatch) -> FakeLLMProvider:
     fake = FakeLLMProvider()
     monkeypatch.setattr(providers, "get_llm_provider", lambda: fake)
+    return fake
+
+
+@pytest.fixture
+def fake_reranker_provider(monkeypatch: pytest.MonkeyPatch) -> FakeRerankerProvider:
+    fake = FakeRerankerProvider()
+    monkeypatch.setattr(providers, "get_reranker_provider", lambda: fake)
     return fake
 
 

@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     openai_api_key: str = ""
     google_api_key: str = ""
+    cohere_api_key: str = ""
     provider_timeout_seconds: float = 30.0
 
     # Which LLMProvider implementation app.providers.get_llm_provider() constructs —
@@ -83,6 +84,21 @@ class Settings(BaseSettings):
     # retrieval_relevance_threshold above): keeps prompt size/cost bounded rather
     # than growing unboundedly over a long-running conversation.
     chat_history_max_messages: int = 10
+
+    # Optional pipeline toggle (issue #12): False runs vector→answer (retrieval as
+    # shaped above, unchanged); True inserts a rerank step, vector→rerank→answer,
+    # re-scoring a larger retrieved candidate pool with a hosted cross-encoder and
+    # keeping only the top retrieval_top_k for the prompt. A genuine on/off switch,
+    # not a hard dependency — the reranker is never required for the pipeline to
+    # run. Off by default: no reranker API key is required to run this app at all.
+    reranker_enabled: bool = False
+    reranker_model: str = "rerank-v3.5"
+    # How many candidates search_ready fetches (per branch — see its docstring)
+    # before reranking narrows them down to retrieval_top_k — wider than
+    # retrieval_top_k itself so the reranker actually has something to rerank.
+    # Irrelevant when reranker_enabled is False, where search_ready is called
+    # with retrieval_top_k directly instead.
+    rerank_candidate_pool_size: int = 20
 
 
 settings = Settings()

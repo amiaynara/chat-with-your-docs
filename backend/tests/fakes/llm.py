@@ -2,7 +2,11 @@ import re
 
 from app.adapters.llm import AnswerResult, Message
 
-_CONTEXT_BLOCK = re.compile(r"<context>(.*?)</context>", re.DOTALL)
+# Anchored on a newline right after the opening tag (exactly how
+# qa/answering.py's _SYSTEM_TEMPLATE renders it) rather than bare "<context>" —
+# the template's own instructions prose mentions "the <context> block" inline,
+# which a bare-tag regex's first match would latch onto instead of the real tag.
+_CONTEXT_BLOCK = re.compile(r"<context>\n(.*?)\n</context>", re.DOTALL)
 
 
 class FakeLLMProvider:

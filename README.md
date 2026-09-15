@@ -19,6 +19,10 @@ See `docs/embeddings.md` for the tradeoffs and how to switch.
 No Anthropic key/budget? Set `LLM_PROVIDER=google` instead — chat then answers via Google
 Gemini, which has a real (rate-limited) free tier. See `docs/llm-providers.md`.
 
+Retrieval combines vector and keyword search by default (no extra setup/keys needed). An
+optional reranking step on top of that is off by default; set `RERANKER_ENABLED=true` and
+`COHERE_API_KEY` to turn it on. See `docs/architecture.md`'s ticket ledger for both.
+
 ```
 docker compose up
 ```
@@ -49,8 +53,8 @@ uv run uvicorn app.main:app --reload
 Coverage: the fast suite alone won't show 100%, because the real provider adapters'
 network-client code paths (e.g. `S3ObjectStorage` actually talking to MinIO) are only
 exercised by the `integration`-marked tests, which need `postgres` and `minio` running
-(`docker compose up -d postgres redis minio`). Together they're 100% (448/448 statements,
-enforced via `fail_under = 100` in `pyproject.toml`):
+(`docker compose up -d postgres redis minio`). Together they're 100%, enforced via
+`fail_under = 100` in `pyproject.toml`:
 
 ```
 uv run pytest -m "integration or not integration" --cov=app --cov-report=term-missing

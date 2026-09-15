@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app import providers
 from app.adapters.llm import Message
 from app.config import settings
+from app.models import Chunk
 from app.repositories import ChunkRepository
 
 _SYSTEM_TEMPLATE = """You are a helpful assistant that answers questions using only the \
@@ -55,6 +56,23 @@ def _snippet(content: str) -> str:
     return content[:_SNIPPET_MAX_CHARS].rstrip() + "…"
 
 
+def _rerank(chunks: list[Chunk], question: str) -> list[Chunk]:
+    """Re-score `chunks` (already filtered for relevance) against `question` with
+    the configured RerankerProvider, keeping the top retrieval_top_k in
+    relevance-descending order. Only called when settings.reranker_enabled — see
+    answer_question, which fetches a wider candidate pool
+    (rerank_candidate_pool_size) up front precisely so there's more than
+    retrieval_top_k relevant candidates for this step to actually narrow down.
+    """
+    reranker = providers.get_reranker_provider()
+    ranked = reranker.rerank(
+        query=question,
+        documents=[chunk.content for chunk in chunks],
+        top_n=settings.retrieval_top_k,
+    )
+    return [chunks[ranked_doc.index] for ranked_doc in ranked]
+
+
 def answer_question(
     db: Session,
     question: str,
@@ -75,20 +93,45 @@ def answer_question(
     turns (oldest first) so a follow-up question can reference them — the
     caller (api/chat.py) is responsible for loading and bounding it from
     persisted session history; this function only ever forwards it.
+
+    Pipeline (issue #12): settings.reranker_enabled toggles between
+    vector→answer (this function's baseline shape) and vector→rerank→answer,
+    inserting _rerank as an extra step between retrieval and generation — a
+    genuine on/off switch, not a hard dependency; the reranker is never
+    constructed at all when the toggle is off.
     """
     embedder = providers.get_embedding_provider()
     query_vector = embedder.embed([question])[0]
 
-    scored_chunks = ChunkRepository(db).search_ready(
-        query_vector, limit=settings.retrieval_top_k, session_id=session_id, doc_ids=doc_ids
+    # A wider candidate pool when reranking is on, so there's more than
+    # retrieval_top_k relevant chunks for _rerank to actually narrow down —
+    # otherwise it would just be reordering the same retrieval_top_k chunks.
+    candidate_limit = (
+        settings.rerank_candidate_pool_size
+        if settings.reranker_enabled
+        else settings.retrieval_top_k
     )
+    scored_chunks = ChunkRepository(db).search_ready(
+        query_vector,
+        question,
+        limit=candidate_limit,
+        session_id=session_id,
+        doc_ids=doc_ids,
+    )
+    # A chunk counts as relevant either by clearing the vector-distance threshold
+    # or by matching the keyword (full-text) branch outright — see
+    # ChunkRepository.search_ready's docstring for why a keyword match bypasses
+    # the distance check rather than being subject to it.
     chunks = [
-        chunk
-        for chunk, distance in scored_chunks
-        if distance <= settings.retrieval_relevance_threshold
+        scored.chunk
+        for scored in scored_chunks
+        if scored.keyword_match or scored.distance <= settings.retrieval_relevance_threshold
     ]
     if not chunks:
         return Answer(text=_NO_EVIDENCE_MESSAGE, citations=[])
+
+    if settings.reranker_enabled:
+        chunks = _rerank(chunks, question)
 
     context = "\n\n".join(f"[{chunk.location_ref}] {chunk.content}" for chunk in chunks)
 

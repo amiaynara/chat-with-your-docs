@@ -10,6 +10,7 @@ from app.adapters.embeddings import (
     OpenAIEmbeddingProvider,
 )
 from app.adapters.llm import AnthropicLLMProvider, GeminiLLMProvider, LLMProvider
+from app.adapters.reranker import CohereRerankProvider, RerankerProvider
 from app.adapters.storage import ObjectStorage, S3ObjectStorage
 from app.config import settings
 
@@ -74,3 +75,11 @@ def get_llm_provider() -> LLMProvider:
         raise RuntimeError(
             f"Unknown LLM_PROVIDER={settings.llm_provider!r}; expected 'anthropic' or 'google'."
         )
+
+
+def get_reranker_provider() -> RerankerProvider:
+    return CohereRerankProvider(
+        api_key=settings.cohere_api_key,
+        model=settings.reranker_model,
+        timeout_seconds=settings.provider_timeout_seconds,
+    )

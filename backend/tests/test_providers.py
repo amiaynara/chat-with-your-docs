@@ -148,3 +148,22 @@ def test_get_llm_provider_raises_on_unknown_provider_name(monkeypatch):
 
     with pytest.raises(RuntimeError, match="Unknown LLM_PROVIDER"):
         providers.get_llm_provider()
+
+
+def test_get_reranker_provider_wires_settings_into_cohere_rerank_provider(monkeypatch):
+    captured = {}
+
+    class StubReranker:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(providers, "CohereRerankProvider", StubReranker)
+
+    result = providers.get_reranker_provider()
+
+    assert isinstance(result, StubReranker)
+    assert captured == {
+        "api_key": settings.cohere_api_key,
+        "model": settings.reranker_model,
+        "timeout_seconds": settings.provider_timeout_seconds,
+    }

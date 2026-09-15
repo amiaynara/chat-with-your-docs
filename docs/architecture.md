@@ -12,8 +12,8 @@ published artifact from this session, if you have that link.
 
 | Style | Meaning |
 | --- | --- |
-| 🟢 solid green | **Built** — tickets 1–9, closed |
-| 🟠 dashed amber | **Planned** — tickets 10–16, `ready-for-agent`, not yet built |
+| 🟢 solid green | **Built** — tickets 1–11, closed |
+| 🟠 dashed amber | **Planned** — tickets 12–16, `ready-for-agent`, not yet built |
 | 🔵 blue | External AI provider (Anthropic, OpenAI) |
 | ⬜ grey | Data store / infrastructure |
 
@@ -58,7 +58,7 @@ flowchart TB
 
     subgraph ASK["Retrieval & Answer · in-process (sync ask)"]
         direction LR
-        Q1["Embed query"]:::built --> Q2["Retrieve<br/>+hybrid #10"]:::built --> Q3["Rerank · #11"]:::planned --> Q4["Generate<br/>+citations, +guardrails"]:::built
+        Q1["Embed query"]:::built --> Q2["Retrieve<br/>+hybrid #10"]:::built --> Q3["Rerank · #11"]:::built --> Q4["Generate<br/>+citations, +guardrails"]:::built
     end
 
     subgraph DATA["Data stores"]
@@ -71,7 +71,7 @@ flowchart TB
         direction LR
         P1["LLM — Anthropic"]:::external
         P2["Embeddings — OpenAI"]:::external
-        P3["Reranker (opt.) · #11"]:::planned
+        P3["Reranker (opt.) — Cohere · #11"]:::built
     end
 
     subgraph SUPPORT["Supporting systems — build-time & quality, not on the request path"]
@@ -126,13 +126,13 @@ production target — dashed throughout, because none of it is deployed.
 | 7 | #8 | Multi-turn conversation + session persistence + empty states | 🟢 Built | Client, API, Data stores |
 | 8 | #9 | Document-scoped retrieval filtering | 🟢 Built | Client, Retrieval & Answer |
 | 9 | #10 | Structure-aware chunking upgrade | 🟢 Built | Worker |
-| 10 | #11 | Hybrid retrieval (vector + keyword) | 🟠 Planned | Retrieval & Answer, Data stores |
-| 11 | #12 | Optional reranker toggle | 🟠 Planned | Retrieval & Answer, AI providers |
+| 10 | #11 | Hybrid retrieval (vector + keyword) | 🟢 Built | Retrieval & Answer, Data stores |
+| 11 | #12 | Optional reranker toggle | 🟢 Built | Retrieval & Answer, AI providers |
 | 12 | #13 | Evaluation harness | 🟠 Planned | Evaluation & Quality |
 | 13 | #14 | In-app trace panel + structured logging | 🟠 Planned | Client, Observability |
 | 14 | #15 | CI: add eval harness job | 🟠 Planned | CI/CD, Evaluation & Quality |
 | 15 | #16 | Deployment follow-up backlog | 🟠 Planned | Production target (AWS) |
 | 16 | #17 | Final README + submission polish | 🟠 Planned | — |
 
-16 tickets · 9 built · 7 planned. Zero open `needs-triage`/`needs-info` items — every ticket
+16 tickets · 11 built · 5 planned. Zero open `needs-triage`/`needs-info` items — every ticket
 above is `ready-for-agent` in the tracker.
