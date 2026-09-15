@@ -58,14 +58,18 @@ def _snippet(content: str) -> str:
 def answer_question(
     db: Session,
     question: str,
+    session_id: str,
     doc_ids: list[uuid.UUID] | None = None,
     history: list[Message] | None = None,
 ) -> Answer:
     """Retrieve relevant chunks and generate an answer grounded in them.
 
-    `doc_ids`, if given (non-empty), scopes retrieval to just those documents
-    instead of the whole corpus — see ChunkRepository.search_ready for why that
-    filter is applied inside the retrieval query itself.
+    `session_id` scopes retrieval to the asking session's own documents — see
+    ChunkRepository.search_ready for why that filter is applied inside the
+    retrieval query itself rather than as a post-filter.
+
+    `doc_ids`, if given (non-empty), further scopes retrieval to just those
+    documents within the session's own corpus.
 
     `history`, if given, is prepended to the LLM call as prior conversation
     turns (oldest first) so a follow-up question can reference them — the
@@ -76,7 +80,7 @@ def answer_question(
     query_vector = embedder.embed([question])[0]
 
     scored_chunks = ChunkRepository(db).search_ready(
-        query_vector, limit=settings.retrieval_top_k, doc_ids=doc_ids
+        query_vector, limit=settings.retrieval_top_k, session_id=session_id, doc_ids=doc_ids
     )
     chunks = [
         chunk

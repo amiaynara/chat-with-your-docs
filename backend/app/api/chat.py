@@ -70,10 +70,16 @@ def _recent_history(message_repo: MessageRepository, session_id: str) -> list[LL
 
 
 def _generate_answer_or_502(
-    db: Session, question: str, doc_ids: list[uuid.UUID] | None, history: list[LLMMessage]
+    db: Session,
+    question: str,
+    session_id: str,
+    doc_ids: list[uuid.UUID] | None,
+    history: list[LLMMessage],
 ) -> Answer:
     try:
-        return answer_question(db, question, doc_ids=doc_ids, history=history)
+        return answer_question(
+            db, question, session_id=session_id, doc_ids=doc_ids, history=history
+        )
     except Exception:
         # Provider SDKs raise their own, inconsistent exception types for
         # configuration errors (e.g. a missing API key) that never reach our
@@ -103,7 +109,7 @@ def ask_question(
         )
         return AskResponse(answer=_NO_DOCUMENTS_MESSAGE, citations=[])
 
-    result = _generate_answer_or_502(db, request.question, request.doc_ids, history)
+    result = _generate_answer_or_502(db, request.question, session_id, request.doc_ids, history)
     citations_out = [CitationOut.from_citation(c) for c in result.citations]
 
     message_repo.create(

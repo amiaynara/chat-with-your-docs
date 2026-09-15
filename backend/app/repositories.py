@@ -66,6 +66,7 @@ class ChunkRepository:
         self,
         query_embedding: list[float],
         limit: int,
+        session_id: str,
         doc_ids: list[uuid.UUID] | None = None,
     ) -> list[tuple[Chunk, float]]:
         """Return the `limit` nearest READY chunks, each paired with its cosine
@@ -78,19 +79,25 @@ class ChunkRepository:
         whether a match is relevant at all, not just to rank matches against each
         other.
 
-        `doc_ids`, if given (non-empty), restricts the candidate set to those
-        documents' chunks *inside this same query* — applied in the WHERE clause
-        before ORDER BY/LIMIT, not as a filter over an already-fetched unscoped
-        top-`limit` result. That distinction matters: post-filtering an unscoped
-        top-k could silently return fewer than `limit` relevant scoped chunks (or
-        none at all) whenever other documents' chunks are more similar to the
-        query and crowd the scoped ones out of that top-k window.
+        `session_id` restricts the candidate set to the asking session's own
+        documents — applied in the WHERE clause before ORDER BY/LIMIT, same as
+        `doc_ids` below. The session cookie is this app's only privacy boundary
+        (no accounts), so this is not optional the way `doc_ids` is (issue #20).
+
+        `doc_ids`, if given (non-empty), further restricts the (already
+        session-scoped) candidate set to those documents' chunks *inside this
+        same query* — applied in the WHERE clause before ORDER BY/LIMIT, not as
+        a filter over an already-fetched unscoped top-`limit` result. That
+        distinction matters: post-filtering an unscoped top-k could silently
+        return fewer than `limit` relevant scoped chunks (or none at all)
+        whenever other documents' chunks are more similar to the query and
+        crowd the scoped ones out of that top-k window.
         """
         distance = Chunk.embedding.cosine_distance(query_embedding).label("distance")
         stmt = (
             select(Chunk, distance)
             .join(Document, Chunk.document_id == Document.id)
-            .where(Document.status == DocumentStatus.READY)
+            .where(Document.status == DocumentStatus.READY, Document.session_id == session_id)
         )
         if doc_ids:
             stmt = stmt.where(Chunk.document_id.in_(doc_ids))
