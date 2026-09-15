@@ -9,7 +9,7 @@ from app.adapters.llm import Message as LLMMessage
 from app.config import settings
 from app.db import get_db
 from app.models import MessageRole
-from app.qa.answering import Citation, answer_question
+from app.qa.answering import Answer, Citation, answer_question
 from app.repositories import DocumentRepository, MessageRepository
 from app.session import get_session_id
 
@@ -38,6 +38,15 @@ class CitationOut(BaseModel):
     location_ref: str
     snippet: str
 
+    @classmethod
+    def from_citation(cls, citation: Citation) -> "CitationOut":
+        return cls(
+            document_id=citation.document_id,
+            filename=citation.filename,
+            location_ref=citation.location_ref,
+            snippet=citation.snippet,
+        )
+
 
 class AskResponse(BaseModel):
     answer: str
@@ -50,40 +59,21 @@ class MessageOut(BaseModel):
     citations: list[CitationOut] | None = None
 
 
-def _citation_to_dict(citation: Citation) -> dict:
-    # UUID isn't JSON-serializable as-is; stored as str, read back into a UUID
-    # field by CitationOut's own validation when replayed via GET /chat/messages.
-    return {
-        "document_id": str(citation.document_id),
-        "filename": citation.filename,
-        "location_ref": citation.location_ref,
-        "snippet": citation.snippet,
-    }
+def _recent_history(message_repo: MessageRepository, session_id: str) -> list[LLMMessage]:
+    """The session's recent turns from *before* this exchange (it hasn't been
+    persisted yet when this is called), bounded to
+    settings.chat_history_max_messages and converted to the shape
+    answer_question expects for the LLM prompt.
+    """
+    rows = message_repo.list_for_session(session_id)[-settings.chat_history_max_messages :]
+    return [LLMMessage(role=row.role.value, content=row.content) for row in rows]
 
 
-@router.post("/messages", response_model=AskResponse)
-def ask_question(
-    request: AskRequest,
-    db: Session = Depends(get_db),
-    session_id: str = Depends(get_session_id),
-) -> AskResponse:
-    message_repo = MessageRepository(db)
-
-    # Loaded before persisting the current question, so it never includes
-    # itself — only turns from *before* this exchange.
-    history_rows = message_repo.list_for_session(session_id)[-settings.chat_history_max_messages :]
-    history = [LLMMessage(role=row.role.value, content=row.content) for row in history_rows]
-
-    message_repo.create(session_id=session_id, role=MessageRole.USER, content=request.question)
-
-    if not DocumentRepository(db).list_for_session(session_id):
-        message_repo.create(
-            session_id=session_id, role=MessageRole.ASSISTANT, content=_NO_DOCUMENTS_MESSAGE
-        )
-        return AskResponse(answer=_NO_DOCUMENTS_MESSAGE, citations=[])
-
+def _generate_answer_or_502(
+    db: Session, question: str, doc_ids: list[uuid.UUID] | None, history: list[LLMMessage]
+) -> Answer:
     try:
-        result = answer_question(db, request.question, doc_ids=request.doc_ids, history=history)
+        return answer_question(db, question, doc_ids=doc_ids, history=history)
     except Exception:
         # Provider SDKs raise their own, inconsistent exception types for
         # configuration errors (e.g. a missing API key) that never reach our
@@ -95,25 +85,35 @@ def ask_question(
             status_code=502, detail="Could not get an answer right now. Please try again shortly."
         ) from None
 
+
+@router.post("/messages", response_model=AskResponse)
+def ask_question(
+    request: AskRequest,
+    db: Session = Depends(get_db),
+    session_id: str = Depends(get_session_id),
+) -> AskResponse:
+    message_repo = MessageRepository(db)
+    history = _recent_history(message_repo, session_id)
+
+    message_repo.create(session_id=session_id, role=MessageRole.USER, content=request.question)
+
+    if not DocumentRepository(db).list_for_session(session_id):
+        message_repo.create(
+            session_id=session_id, role=MessageRole.ASSISTANT, content=_NO_DOCUMENTS_MESSAGE
+        )
+        return AskResponse(answer=_NO_DOCUMENTS_MESSAGE, citations=[])
+
+    result = _generate_answer_or_502(db, request.question, request.doc_ids, history)
+    citations_out = [CitationOut.from_citation(c) for c in result.citations]
+
     message_repo.create(
         session_id=session_id,
         role=MessageRole.ASSISTANT,
         content=result.text,
-        citations=[_citation_to_dict(c) for c in result.citations] or None,
+        citations=[c.model_dump(mode="json") for c in citations_out] or None,
     )
 
-    return AskResponse(
-        answer=result.text,
-        citations=[
-            CitationOut(
-                document_id=c.document_id,
-                filename=c.filename,
-                location_ref=c.location_ref,
-                snippet=c.snippet,
-            )
-            for c in result.citations
-        ],
-    )
+    return AskResponse(answer=result.text, citations=citations_out)
 
 
 @router.get("/messages", response_model=list[MessageOut])
