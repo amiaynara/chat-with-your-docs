@@ -103,6 +103,75 @@ jobs:
       - name: Test (fast + integration, with coverage)
         run: uv run pytest -m "integration or not integration" --cov=app --cov-report=term-missing
 
+  eval:
+    # Runs the evaluation harness (backend/app/eval, issue #13) as its own CI job,
+    # distinct from lint/tests, so hit-rate/faithfulness/rerank-delta are a
+    # measured-on-every-push number, not just something a developer might
+    # remember to run manually.
+    #
+    # Unlike the rest of this repo's CI, this can't run against fakes or a free
+    # local/self-hosted service substitute: the pgvector schema is a fixed
+    # 1536-dim column (OpenAI's embedding size — see docs/embeddings.md), and the
+    # harness's LLM-as-judge step needs a real LLM. So it calls real OpenAI,
+    # Anthropic, and Cohere APIs, and is skipped entirely when those aren't
+    # configured as repo secrets — keeping CI green (and free) on a fork/clone
+    # without them, same as the rest of this project's "works without paid keys"
+    # default. Configure OPENAI_API_KEY, ANTHROPIC_API_KEY, and COHERE_API_KEY as
+    # repository secrets to turn this job on.
+    if: ${{ secrets.OPENAI_API_KEY != '' && secrets.ANTHROPIC_API_KEY != '' && secrets.COHERE_API_KEY != '' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5433/app
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.x"
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Apply database migrations
+        run: uv run alembic upgrade head
+
+      - name: Run evaluation harness
+        run: uv run python -m app.eval | tee eval-output.txt
+
+      - name: Publish results to the job summary
+        if: always()
+        run: |
+          {
+            echo "## Evaluation harness results"
+            echo '```'
+            cat eval-output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   frontend:
     runs-on: ubuntu-latest
     defaults:
