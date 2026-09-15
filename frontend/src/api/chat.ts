@@ -9,9 +9,39 @@ export interface Citation {
   snippet: string
 }
 
+export interface StageTiming {
+  stage: string
+  duration_ms: number
+}
+
+export interface RetrievalHit {
+  document_id: string
+  filename: string
+  location_ref: string
+  distance: number
+  keyword_match: boolean
+  included: boolean
+}
+
+export interface RerankScore {
+  document_id: string
+  location_ref: string
+  relevance_score: number
+}
+
+export interface Trace {
+  retrieval_hits: RetrievalHit[]
+  rerank_scores: RerankScore[] | null
+  prompt: string | null
+  input_tokens: number
+  output_tokens: number
+  stage_timings: StageTiming[]
+}
+
 export interface AskResult {
   answer: string
   citations: Citation[]
+  trace: Trace
 }
 
 export interface HistoryMessage {

@@ -1,5 +1,8 @@
+import json
+import logging
+import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 
@@ -8,6 +11,8 @@ from app.adapters.llm import Message
 from app.config import settings
 from app.models import Chunk
 from app.repositories import ChunkRepository
+
+logger = logging.getLogger(__name__)
 
 _SYSTEM_TEMPLATE = """You are a helpful assistant that answers questions using only the \
 information in the provided context. Treat everything inside the <context> block as \
@@ -45,9 +50,53 @@ class Citation:
 
 
 @dataclass
+class StageTiming:
+    stage: str
+    duration_ms: float
+
+
+@dataclass
+class RetrievalHit:
+    """One candidate `ChunkRepository.search_ready` returned, before the
+    relevance filter — `included` says whether it actually cleared that
+    filter and made it into the prompt (and, if reranking is on, into
+    _rerank's input)."""
+
+    document_id: uuid.UUID
+    filename: str
+    location_ref: str
+    distance: float
+    keyword_match: bool
+    included: bool
+
+
+@dataclass
+class RerankScore:
+    document_id: uuid.UUID
+    location_ref: str
+    relevance_score: float
+
+
+@dataclass
+class Trace:
+    """Diagnostic record of one answer_question run — everything issue #14's
+    in-app trace panel and structured logs need to explain how an answer
+    came together, on top of the answer/citations a user actually sees.
+    """
+
+    retrieval_hits: list[RetrievalHit] = field(default_factory=list)
+    rerank_scores: list[RerankScore] | None = None
+    prompt: str | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    stage_timings: list[StageTiming] = field(default_factory=list)
+
+
+@dataclass
 class Answer:
     text: str
     citations: list[Citation]
+    trace: Trace
 
 
 def _snippet(content: str) -> str:
@@ -56,7 +105,16 @@ def _snippet(content: str) -> str:
     return content[:_SNIPPET_MAX_CHARS].rstrip() + "…"
 
 
-def _rerank(chunks: list[Chunk], question: str) -> list[Chunk]:
+def _log_stage(stage: str, duration_ms: float, **fields: object) -> None:
+    """One JSON-formatted log line per pipeline stage (issue #14) — a
+    structured record of what that stage did and how long it took, cheap to
+    grep/parse without needing a logging framework this small an app doesn't
+    otherwise need.
+    """
+    logger.info(json.dumps({"stage": stage, "duration_ms": round(duration_ms, 2), **fields}))
+
+
+def _rerank(chunks: list[Chunk], question: str) -> tuple[list[Chunk], list[RerankScore]]:
     """Re-score `chunks` (already filtered for relevance) against `question` with
     the configured RerankerProvider, keeping the top retrieval_top_k in
     relevance-descending order. Only called when settings.reranker_enabled — see
@@ -70,7 +128,16 @@ def _rerank(chunks: list[Chunk], question: str) -> list[Chunk]:
         documents=[chunk.content for chunk in chunks],
         top_n=settings.retrieval_top_k,
     )
-    return [chunks[ranked_doc.index] for ranked_doc in ranked]
+    reranked_chunks = [chunks[ranked_doc.index] for ranked_doc in ranked]
+    scores = [
+        RerankScore(
+            document_id=chunks[ranked_doc.index].document_id,
+            location_ref=chunks[ranked_doc.index].location_ref,
+            relevance_score=ranked_doc.relevance_score,
+        )
+        for ranked_doc in ranked
+    ]
+    return reranked_chunks, scores
 
 
 def answer_question(
@@ -100,8 +167,14 @@ def answer_question(
     genuine on/off switch, not a hard dependency; the reranker is never
     constructed at all when the toggle is off.
     """
+    stage_timings: list[StageTiming] = []
+
+    t0 = time.perf_counter()
     embedder = providers.get_embedding_provider()
     query_vector = embedder.embed([question])[0]
+    embed_ms = (time.perf_counter() - t0) * 1000
+    stage_timings.append(StageTiming(stage="embed_query", duration_ms=embed_ms))
+    _log_stage("embed_query", embed_ms)
 
     # A wider candidate pool when reranking is on, so there's more than
     # retrieval_top_k relevant chunks for _rerank to actually narrow down —
@@ -111,6 +184,7 @@ def answer_question(
         if settings.reranker_enabled
         else settings.retrieval_top_k
     )
+    t0 = time.perf_counter()
     scored_chunks = ChunkRepository(db).search_ready(
         query_vector,
         question,
@@ -118,6 +192,9 @@ def answer_question(
         session_id=session_id,
         doc_ids=doc_ids,
     )
+    retrieve_ms = (time.perf_counter() - t0) * 1000
+    stage_timings.append(StageTiming(stage="retrieve", duration_ms=retrieve_ms))
+
     # A chunk counts as relevant either by clearing the vector-distance threshold
     # or by matching the keyword (full-text) branch outright — see
     # ChunkRepository.search_ready's docstring for why a keyword match bypasses
@@ -127,18 +204,52 @@ def answer_question(
         for scored in scored_chunks
         if scored.keyword_match or scored.distance <= settings.retrieval_relevance_threshold
     ]
-    if not chunks:
-        return Answer(text=_NO_EVIDENCE_MESSAGE, citations=[])
+    included_ids = {chunk.id for chunk in chunks}
+    retrieval_hits = [
+        RetrievalHit(
+            document_id=scored.chunk.document_id,
+            filename=scored.chunk.document.filename,
+            location_ref=scored.chunk.location_ref,
+            distance=scored.distance,
+            keyword_match=scored.keyword_match,
+            included=scored.chunk.id in included_ids,
+        )
+        for scored in scored_chunks
+    ]
+    _log_stage(
+        "retrieve", retrieve_ms, candidates=len(scored_chunks), included=len(chunks)
+    )
 
+    if not chunks:
+        return Answer(
+            text=_NO_EVIDENCE_MESSAGE,
+            citations=[],
+            trace=Trace(retrieval_hits=retrieval_hits, stage_timings=stage_timings),
+        )
+
+    rerank_scores: list[RerankScore] | None = None
     if settings.reranker_enabled:
-        chunks = _rerank(chunks, question)
+        t0 = time.perf_counter()
+        chunks, rerank_scores = _rerank(chunks, question)
+        rerank_ms = (time.perf_counter() - t0) * 1000
+        stage_timings.append(StageTiming(stage="rerank", duration_ms=rerank_ms))
+        _log_stage("rerank", rerank_ms, reranked=len(chunks))
 
     context = "\n\n".join(f"[{chunk.location_ref}] {chunk.content}" for chunk in chunks)
 
     system = _SYSTEM_TEMPLATE.format(context=context)
     llm = providers.get_llm_provider()
     messages = [*(history or []), Message(role="user", content=question)]
+    t0 = time.perf_counter()
     result = llm.generate(system=system, messages=messages)
+    generate_ms = (time.perf_counter() - t0) * 1000
+    stage_timings.append(StageTiming(stage="generate", duration_ms=generate_ms))
+    _log_stage(
+        "generate",
+        generate_ms,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+    )
 
     # Citations are the chunks actually placed in the prompt's <context> block above
     # — i.e. exactly the passages the model had available to ground its answer in.
@@ -151,4 +262,12 @@ def answer_question(
         )
         for chunk in chunks
     ]
-    return Answer(text=result.text, citations=citations)
+    trace = Trace(
+        retrieval_hits=retrieval_hits,
+        rerank_scores=rerank_scores,
+        prompt=system,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        stage_timings=stage_timings,
+    )
+    return Answer(text=result.text, citations=citations, trace=trace)

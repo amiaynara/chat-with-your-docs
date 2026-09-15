@@ -1,24 +1,38 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { askQuestion, AskError, getMessageHistory } from './chat'
+import type { Trace } from './chat'
+
+function makeTrace(overrides: Partial<Trace> = {}): Trace {
+  return {
+    retrieval_hits: [],
+    rerank_scores: null,
+    prompt: null,
+    input_tokens: 0,
+    output_tokens: 0,
+    stage_timings: [],
+    ...overrides,
+  }
+}
 
 describe('askQuestion', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
   })
 
-  it('sends the question and returns the answer with its citations', async () => {
+  it('sends the question and returns the answer with its citations and trace', async () => {
     const citations = [
       { document_id: 'doc-1', filename: 'notes.txt', location_ref: 'document', snippet: 'Wobble-42.' },
     ]
+    const trace = makeTrace({ input_tokens: 12, output_tokens: 4 })
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ answer: 'Wobble-42.', citations }),
+      json: async () => ({ answer: 'Wobble-42.', citations, trace }),
     })
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await askQuestion('What is the secret code?')
 
-    expect(result).toEqual({ answer: 'Wobble-42.', citations })
+    expect(result).toEqual({ answer: 'Wobble-42.', citations, trace })
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe('http://localhost:8000/chat/messages')
     expect(init).toMatchObject({
@@ -32,7 +46,7 @@ describe('askQuestion', () => {
   it('includes doc_ids in the request body when scoping to specific documents', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ answer: 'Wobble-42.', citations: [] }),
+      json: async () => ({ answer: 'Wobble-42.', citations: [], trace: makeTrace() }),
     })
     vi.stubGlobal('fetch', fetchMock)
 
@@ -48,7 +62,7 @@ describe('askQuestion', () => {
   it('omits doc_ids from the request body when no documents are scoped', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ answer: 'Wobble-42.', citations: [] }),
+      json: async () => ({ answer: 'Wobble-42.', citations: [], trace: makeTrace() }),
     })
     vi.stubGlobal('fetch', fetchMock)
 

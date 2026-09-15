@@ -1,11 +1,21 @@
 import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { AskError, askQuestion, getMessageHistory, type Citation, type HistoryMessage } from '../api/chat'
+import {
+  AskError,
+  askQuestion,
+  getMessageHistory,
+  type Citation,
+  type HistoryMessage,
+  type Trace,
+} from '../api/chat'
 
 interface Turn {
   question: string
   answer: string
   citations: Citation[]
+  // Only set for a turn answered in this session — a turn restored from
+  // GET /chat/messages history has no trace, since it isn't persisted.
+  trace?: Trace
 }
 
 // Messages come back as a flat, role-tagged list; a "turn" is one user
@@ -47,6 +57,7 @@ export function Chat({ docIds = [] }: ChatProps) {
   const [error, setError] = useState<string | null>(null)
   const [isAsking, setIsAsking] = useState(false)
   const [openCitation, setOpenCitation] = useState<OpenCitation | null>(null)
+  const [openTraceIndex, setOpenTraceIndex] = useState<number | null>(null)
 
   useEffect(() => {
     getMessageHistory()
@@ -68,7 +79,12 @@ export function Chat({ docIds = [] }: ChatProps) {
       const result = await askQuestion(trimmed, docIds)
       setTurns((prev) => [
         ...prev,
-        { question: trimmed, answer: result.answer, citations: result.citations },
+        {
+          question: trimmed,
+          answer: result.answer,
+          citations: result.citations,
+          trace: result.trace,
+        },
       ])
       setQuestion('')
     } catch (err) {
@@ -84,6 +100,10 @@ export function Chat({ docIds = [] }: ChatProps) {
         ? null
         : { turnIndex, citationIndex },
     )
+  }
+
+  function toggleTrace(turnIndex: number) {
+    setOpenTraceIndex((current) => (current === turnIndex ? null : turnIndex))
   }
 
   return (
@@ -126,6 +146,17 @@ export function Chat({ docIds = [] }: ChatProps) {
                 <p className="mt-1">{turn.citations[openCitation.citationIndex].snippet}</p>
               </div>
             )}
+            {turn.trace && (
+              <button
+                type="button"
+                onClick={() => toggleTrace(turnIndex)}
+                aria-expanded={openTraceIndex === turnIndex}
+                className="self-start text-xs text-neutral-400 hover:text-neutral-700"
+              >
+                {openTraceIndex === turnIndex ? 'Hide trace' : 'Inspect this answer'}
+              </button>
+            )}
+            {turn.trace && openTraceIndex === turnIndex && <TracePanel trace={turn.trace} />}
           </li>
         ))}
       </ul>
@@ -148,6 +179,64 @@ export function Chat({ docIds = [] }: ChatProps) {
         </button>
       </form>
       {error && <p className="text-sm text-red-600">{error}</p>}
+    </div>
+  )
+}
+
+function TracePanel({ trace }: { trace: Trace }) {
+  return (
+    <div className="flex w-full flex-col gap-2 self-start rounded-md border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-600">
+      <div>
+        <p className="font-medium text-neutral-800">Pipeline timing</p>
+        <ul>
+          {trace.stage_timings.map((timing) => (
+            <li key={timing.stage}>
+              {timing.stage}: {timing.duration_ms.toFixed(1)}ms
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <p>
+        Tokens: {trace.input_tokens} in / {trace.output_tokens} out
+      </p>
+
+      {trace.retrieval_hits.length > 0 && (
+        <div>
+          <p className="font-medium text-neutral-800">Retrieval hits</p>
+          <ul>
+            {trace.retrieval_hits.map((hit, index) => (
+              <li key={index} className={hit.included ? undefined : 'text-neutral-400'}>
+                [{hit.included ? 'used' : 'skipped'}] {hit.filename} ({hit.location_ref}) —
+                distance {hit.distance.toFixed(3)}
+                {hit.keyword_match ? ', keyword match' : ''}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {trace.rerank_scores && (
+        <div>
+          <p className="font-medium text-neutral-800">Rerank scores</p>
+          <ul>
+            {trace.rerank_scores.map((score, index) => (
+              <li key={index}>
+                {score.location_ref} — relevance {score.relevance_score.toFixed(3)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {trace.prompt && (
+        <div>
+          <p className="font-medium text-neutral-800">Assembled prompt</p>
+          <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-neutral-50 p-2">
+            {trace.prompt}
+          </pre>
+        </div>
+      )}
     </div>
   )
 }

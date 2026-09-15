@@ -2,7 +2,20 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as chatApi from '../api/chat'
+import type { Trace } from '../api/chat'
 import { Chat } from './Chat'
+
+function makeTrace(overrides: Partial<Trace> = {}): Trace {
+  return {
+    retrieval_hits: [],
+    rerank_scores: null,
+    prompt: null,
+    input_tokens: 0,
+    output_tokens: 0,
+    stage_timings: [],
+    ...overrides,
+  }
+}
 
 describe('Chat', () => {
   afterEach(() => {
@@ -13,6 +26,7 @@ describe('Chat', () => {
     vi.spyOn(chatApi, 'askQuestion').mockResolvedValue({
       answer: 'The secret launch code is Wobble-42.',
       citations: [],
+      trace: makeTrace(),
     })
 
     render(<Chat />)
@@ -90,7 +104,7 @@ describe('Chat', () => {
   it('passes the docIds prop through to askQuestion when scoping a question', async () => {
     const askSpy = vi
       .spyOn(chatApi, 'askQuestion')
-      .mockResolvedValue({ answer: 'An answer.', citations: [] })
+      .mockResolvedValue({ answer: 'An answer.', citations: [], trace: makeTrace() })
 
     render(<Chat docIds={['doc-1', 'doc-2']} />)
 
@@ -104,6 +118,7 @@ describe('Chat', () => {
     vi.spyOn(chatApi, 'askQuestion').mockResolvedValue({
       answer: '**Category:** Negligible\n\n- item one\n- item two',
       citations: [],
+      trace: makeTrace(),
     })
 
     render(<Chat />)
@@ -128,6 +143,7 @@ describe('Chat', () => {
           snippet: 'The secret launch code is Wobble-42. Keep it safe.',
         },
       ],
+      trace: makeTrace(),
     })
 
     render(<Chat />)
@@ -153,6 +169,7 @@ describe('Chat', () => {
     vi.spyOn(chatApi, 'askQuestion').mockResolvedValue({
       answer: "I don't have any supporting information to answer that.",
       citations: [],
+      trace: makeTrace(),
     })
 
     render(<Chat />)
@@ -165,7 +182,11 @@ describe('Chat', () => {
   })
 
   it('clears the input after asking', async () => {
-    vi.spyOn(chatApi, 'askQuestion').mockResolvedValue({ answer: 'An answer.', citations: [] })
+    vi.spyOn(chatApi, 'askQuestion').mockResolvedValue({
+      answer: 'An answer.',
+      citations: [],
+      trace: makeTrace(),
+    })
 
     render(<Chat />)
 
@@ -197,6 +218,76 @@ describe('Chat', () => {
     await userEvent.click(screen.getByRole('button', { name: /ask/i }))
 
     expect(await screen.findByText(/please try again/i)).toBeInTheDocument()
+  })
+
+  it('shows an inspect-this-answer button that reveals the trace panel on click', async () => {
+    vi.spyOn(chatApi, 'askQuestion').mockResolvedValue({
+      answer: 'The secret launch code is Wobble-42.',
+      citations: [],
+      trace: makeTrace({
+        prompt: 'System prompt with <context>Wobble-42</context>',
+        input_tokens: 42,
+        output_tokens: 7,
+        stage_timings: [
+          { stage: 'embed_query', duration_ms: 1.5 },
+          { stage: 'retrieve', duration_ms: 3.25 },
+          { stage: 'generate', duration_ms: 120 },
+        ],
+        retrieval_hits: [
+          {
+            document_id: 'doc-1',
+            filename: 'notes.txt',
+            location_ref: 'document',
+            distance: 0.12,
+            keyword_match: true,
+            included: true,
+          },
+          {
+            document_id: 'doc-2',
+            filename: 'other.txt',
+            location_ref: 'document',
+            distance: 0.9,
+            keyword_match: false,
+            included: false,
+          },
+        ],
+        rerank_scores: [{ document_id: 'doc-1', location_ref: 'document', relevance_score: 0.87 }],
+      }),
+    })
+
+    render(<Chat />)
+
+    await userEvent.type(screen.getByPlaceholderText(/ask a question/i), 'What is the code?')
+    await userEvent.click(screen.getByRole('button', { name: /ask/i }))
+
+    const inspectButton = await screen.findByRole('button', { name: /inspect this answer/i })
+    expect(screen.queryByText(/pipeline timing/i)).not.toBeInTheDocument()
+
+    await userEvent.click(inspectButton)
+
+    expect(screen.getByText(/pipeline timing/i)).toBeInTheDocument()
+    expect(screen.getByText(/embed_query: 1.5ms/i)).toBeInTheDocument()
+    expect(screen.getByText(/42 in \/ 7 out/i)).toBeInTheDocument()
+    expect(screen.getByText(/notes.txt/i)).toBeInTheDocument()
+    expect(screen.getByText(/other.txt/i)).toBeInTheDocument()
+    expect(screen.getByText(/relevance 0.870/i)).toBeInTheDocument()
+    expect(screen.getByText(/System prompt with/i)).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: /hide trace/i }))
+
+    expect(screen.queryByText(/pipeline timing/i)).not.toBeInTheDocument()
+  })
+
+  it('shows no inspect-this-answer button for a turn restored from history', async () => {
+    vi.spyOn(chatApi, 'getMessageHistory').mockResolvedValue([
+      { role: 'user', content: 'A question.', citations: null },
+      { role: 'assistant', content: 'An answer.', citations: null },
+    ])
+
+    render(<Chat />)
+
+    await screen.findByText('An answer.')
+    expect(screen.queryByRole('button', { name: /inspect this answer/i })).not.toBeInTheDocument()
   })
 
   it('does not submit a blank or whitespace-only question', async () => {

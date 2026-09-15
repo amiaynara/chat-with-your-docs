@@ -120,7 +120,18 @@ describe('App', () => {
     ])
     const askSpy = vi
       .spyOn(chatApi, 'askQuestion')
-      .mockResolvedValue({ answer: 'An answer.', citations: [] })
+      .mockResolvedValue({
+        answer: 'An answer.',
+        citations: [],
+        trace: {
+          retrieval_hits: [],
+          rerank_scores: null,
+          prompt: null,
+          input_tokens: 0,
+          output_tokens: 0,
+          stage_timings: [],
+        },
+      })
 
     render(<App />)
     await screen.findByText('a.txt')
@@ -146,7 +157,18 @@ describe('App', () => {
     ])
     const askSpy = vi
       .spyOn(chatApi, 'askQuestion')
-      .mockResolvedValue({ answer: 'An answer.', citations: [] })
+      .mockResolvedValue({
+        answer: 'An answer.',
+        citations: [],
+        trace: {
+          retrieval_hits: [],
+          rerank_scores: null,
+          prompt: null,
+          input_tokens: 0,
+          output_tokens: 0,
+          stage_timings: [],
+        },
+      })
 
     render(<App />)
     await screen.findByText('a.txt')
@@ -206,7 +228,18 @@ describe('App', () => {
     ])
     const askSpy = vi
       .spyOn(chatApi, 'askQuestion')
-      .mockResolvedValue({ answer: 'An answer.', citations: [] })
+      .mockResolvedValue({
+        answer: 'An answer.',
+        citations: [],
+        trace: {
+          retrieval_hits: [],
+          rerank_scores: null,
+          prompt: null,
+          input_tokens: 0,
+          output_tokens: 0,
+          stage_timings: [],
+        },
+      })
 
     render(<App />)
     await screen.findByText('a.txt')
