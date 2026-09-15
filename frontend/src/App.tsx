@@ -65,6 +65,7 @@ function App() {
         <DocumentList
           documents={documents}
           onDeleted={refresh}
+          onRetried={refresh}
           selectedIds={selectedDocIds}
           onToggleSelect={toggleSelectedDocument}
         />

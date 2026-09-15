@@ -7,7 +7,7 @@ from app.config import settings
 from app.db import SessionLocal
 from app.ingestion.chunking import chunk_sections
 from app.ingestion.parsing import DocumentParseError, parse_document
-from app.models import Chunk, DocumentStatus
+from app.models import Chunk, DocumentErrorCategory, DocumentStatus
 from app.repositories import ChunkRepository, DocumentRepository
 
 logger = logging.getLogger(__name__)
@@ -68,7 +68,12 @@ def ingest_document(document_id: str) -> None:
                 document.filename,
                 exc,
             )
-            documents.set_status(document.id, DocumentStatus.FAILED, error_reason=str(exc))
+            documents.set_status(
+                document.id,
+                DocumentStatus.FAILED,
+                error_reason=str(exc),
+                error_category=DocumentErrorCategory.USER_ERROR,
+            )
         except Exception:  # noqa: BLE001 - any adapter/infra failure; logged in full, sanitized for the user
             logger.exception(
                 "Ingestion failed for document_id=%s filename=%r",
@@ -76,7 +81,10 @@ def ingest_document(document_id: str) -> None:
                 document.filename,
             )
             documents.set_status(
-                document.id, DocumentStatus.FAILED, error_reason=GENERIC_FAILURE_MESSAGE
+                document.id,
+                DocumentStatus.FAILED,
+                error_reason=GENERIC_FAILURE_MESSAGE,
+                error_category=DocumentErrorCategory.SYSTEM_ERROR,
             )
     finally:
         db.close()

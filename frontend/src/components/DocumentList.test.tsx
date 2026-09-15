@@ -12,6 +12,7 @@ function makeDocument(overrides: Partial<Document> = {}): Document {
     format: 'txt',
     status: 'ready',
     error_reason: null,
+    error_category: null,
     created_at: new Date().toISOString(),
     ...overrides,
   }
@@ -124,5 +125,86 @@ describe('DocumentList', () => {
     // No onToggleSelect was passed — clicking must not throw, falling back to
     // the default no-op.
     await userEvent.click(screen.getByRole('checkbox'))
+  })
+
+  it('shows a retry action for a failed document with a system error', () => {
+    render(
+      <DocumentList
+        documents={[makeDocument({ status: 'failed', error_category: 'system_error' })]}
+        onDeleted={() => {}}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
+  })
+
+  it('does not show a retry action for a failed document with a user error', () => {
+    render(
+      <DocumentList
+        documents={[makeDocument({ status: 'failed', error_category: 'user_error' })]}
+        onDeleted={() => {}}
+      />,
+    )
+
+    expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument()
+  })
+
+  it('does not show a retry action for a ready document', () => {
+    render(<DocumentList documents={[makeDocument({ status: 'ready' })]} onDeleted={() => {}} />)
+
+    expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument()
+  })
+
+  it('retries a document and notifies the parent to refresh', async () => {
+    const retrySpy = vi.spyOn(documentsApi, 'retryDocument').mockResolvedValue(
+      makeDocument({ status: 'queued' }),
+    )
+    const onRetried = vi.fn()
+
+    render(
+      <DocumentList
+        documents={[makeDocument({ id: '1', status: 'failed', error_category: 'system_error' })]}
+        onDeleted={() => {}}
+        onRetried={onRetried}
+      />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: /retry/i }))
+
+    expect(retrySpy).toHaveBeenCalledWith('1')
+    expect(onRetried).toHaveBeenCalled()
+  })
+
+  it('shows an error and does not notify the parent when retry fails', async () => {
+    vi.spyOn(documentsApi, 'retryDocument').mockRejectedValue(new Error('boom'))
+    const onRetried = vi.fn()
+
+    render(
+      <DocumentList
+        documents={[makeDocument({ id: '1', status: 'failed', error_category: 'system_error' })]}
+        onDeleted={() => {}}
+        onRetried={onRetried}
+      />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: /retry/i }))
+
+    expect(await screen.findByText(/failed to retry/i)).toBeInTheDocument()
+    expect(onRetried).not.toHaveBeenCalled()
+  })
+
+  it('falls back to a no-op when onRetried is omitted', async () => {
+    vi.spyOn(documentsApi, 'retryDocument').mockResolvedValue(makeDocument({ status: 'queued' }))
+
+    render(
+      <DocumentList
+        documents={[makeDocument({ id: '1', status: 'failed', error_category: 'system_error' })]}
+        onDeleted={() => {}}
+      />,
+    )
+
+    // No onRetried was passed — clicking must not throw, falling back to the
+    // default no-op.
+    await userEvent.click(screen.getByRole('button', { name: /retry/i }))
   })
 })

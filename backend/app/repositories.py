@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Chunk, Document, DocumentStatus, Message, MessageRole
+from app.models import Chunk, Document, DocumentErrorCategory, DocumentStatus, Message, MessageRole
 
 
 @dataclass
@@ -55,13 +55,18 @@ class DocumentRepository:
         return list(self._db.scalars(stmt).all())
 
     def set_status(
-        self, document_id: uuid.UUID, status: DocumentStatus, error_reason: str | None = None
+        self,
+        document_id: uuid.UUID,
+        status: DocumentStatus,
+        error_reason: str | None = None,
+        error_category: DocumentErrorCategory | None = None,
     ) -> None:
         document = self.get(document_id)
         if document is None:
             return
         document.status = status
         document.error_reason = error_reason
+        document.error_category = error_category
         self._db.commit()
 
     def delete(self, document: Document) -> None:

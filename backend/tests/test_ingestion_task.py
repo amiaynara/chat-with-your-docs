@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from app.db import SessionLocal
 from app.ingestion.tasks import GENERIC_FAILURE_MESSAGE, ingest_document
-from app.models import DocumentStatus
+from app.models import DocumentErrorCategory, DocumentStatus
 from app.repositories import DocumentRepository
 
 
@@ -54,5 +54,32 @@ def test_ingest_document_marks_failed_on_an_unexpected_embedding_error(
         refreshed = DocumentRepository(db).get(document_id)
         assert refreshed.status == DocumentStatus.FAILED
         assert refreshed.error_reason == GENERIC_FAILURE_MESSAGE
+        assert refreshed.error_category == DocumentErrorCategory.SYSTEM_ERROR
+    finally:
+        db.close()
+
+
+def test_ingest_document_classifies_a_parse_failure_as_user_error(fake_object_storage):
+    db = SessionLocal()
+    try:
+        storage_key = "session/broken.pdf"
+        fake_object_storage.put(storage_key, b"not actually a pdf")
+        document = DocumentRepository(db).create(
+            session_id="session",
+            filename="broken.pdf",
+            format="pdf",
+            object_storage_key=storage_key,
+        )
+        document_id = document.id
+    finally:
+        db.close()
+
+    ingest_document(str(document_id))
+
+    db = SessionLocal()
+    try:
+        refreshed = DocumentRepository(db).get(document_id)
+        assert refreshed.status == DocumentStatus.FAILED
+        assert refreshed.error_category == DocumentErrorCategory.USER_ERROR
     finally:
         db.close()

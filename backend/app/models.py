@@ -24,6 +24,19 @@ class DocumentFormat(enum.StrEnum):
     MD = "md"
 
 
+class DocumentErrorCategory(enum.StrEnum):
+    """Set alongside error_reason whenever status=FAILED — distinguishes a
+    problem the user can fix by re-uploading (USER_ERROR) from one that may
+    resolve itself and is worth retrying against the same stored bytes
+    (SYSTEM_ERROR). See app.ingestion.tasks.ingest_document for how each
+    failure is classified, and the /documents/{id}/retry route for how this
+    gates whether a retry is allowed.
+    """
+
+    USER_ERROR = "user_error"
+    SYSTEM_ERROR = "system_error"
+
+
 class Document(Base):
     __tablename__ = "documents"
 
@@ -48,6 +61,14 @@ class Document(Base):
         default=DocumentStatus.QUEUED,
     )
     error_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_category: Mapped[DocumentErrorCategory | None] = mapped_column(
+        Enum(
+            DocumentErrorCategory,
+            name="document_error_category",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=True,
+    )
     object_storage_key: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

@@ -9,7 +9,7 @@ from app import providers
 from app.config import settings
 from app.db import get_db
 from app.ingestion.tasks import ingest_document
-from app.models import DocumentFormat
+from app.models import DocumentErrorCategory, DocumentFormat, DocumentStatus
 from app.repositories import DocumentRepository
 from app.session import get_session_id
 
@@ -28,6 +28,7 @@ class DocumentOut(BaseModel):
     format: DocumentFormat
     status: str
     error_reason: str | None
+    error_category: DocumentErrorCategory | None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -103,3 +104,30 @@ def delete_document(
 
     providers.get_object_storage().delete(document.object_storage_key)
     repo.delete(document)
+
+
+@router.post("/{document_id}/retry", response_model=DocumentOut)
+def retry_document(
+    document_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    session_id: str = Depends(get_session_id),
+) -> DocumentOut:
+    repo = DocumentRepository(db)
+    document = repo.get(document_id)
+    if document is None or document.session_id != session_id:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if document.status != DocumentStatus.FAILED:
+        raise HTTPException(status_code=409, detail="Only a failed document can be retried")
+    if document.error_category == DocumentErrorCategory.USER_ERROR:
+        raise HTTPException(
+            status_code=422,
+            detail="This document failed because of the file itself — fix it and re-upload "
+            "instead of retrying",
+        )
+
+    repo.set_status(document.id, DocumentStatus.QUEUED)
+    ingest_document.delay(str(document.id))
+
+    db.refresh(document)
+    return DocumentOut.model_validate(document)

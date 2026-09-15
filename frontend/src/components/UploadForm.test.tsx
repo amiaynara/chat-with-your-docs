@@ -16,6 +16,7 @@ describe('UploadForm', () => {
       format: 'txt',
       status: 'queued',
       error_reason: null,
+      error_category: null,
       created_at: new Date().toISOString(),
     })
     const onUploaded = vi.fn()

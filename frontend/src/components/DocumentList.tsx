@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { deleteDocument, type Document } from '../api/documents'
+import { deleteDocument, retryDocument, type Document } from '../api/documents'
 
 const STATUS_STYLES: Record<Document['status'], string> = {
   queued: 'bg-neutral-200 text-neutral-700',
@@ -11,6 +11,7 @@ const STATUS_STYLES: Record<Document['status'], string> = {
 interface DocumentListProps {
   documents: Document[]
   onDeleted: () => void
+  onRetried?: () => void
   selectedIds?: Set<string>
   onToggleSelect?: (id: string) => void
 }
@@ -18,10 +19,12 @@ interface DocumentListProps {
 export function DocumentList({
   documents,
   onDeleted,
+  onRetried = () => {},
   selectedIds = new Set(),
   onToggleSelect = () => {},
 }: DocumentListProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [retryingId, setRetryingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   async function handleDelete(id: string) {
@@ -34,6 +37,19 @@ export function DocumentList({
       setError('Failed to delete document. Please try again.')
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  async function handleRetry(id: string) {
+    setError(null)
+    setRetryingId(id)
+    try {
+      await retryDocument(id)
+      onRetried()
+    } catch {
+      setError('Failed to retry document. Please try again.')
+    } finally {
+      setRetryingId(null)
     }
   }
 
@@ -66,6 +82,16 @@ export function DocumentList({
               >
                 {document.status}
               </span>
+              {document.status === 'failed' && document.error_category === 'system_error' && (
+                <button
+                  type="button"
+                  onClick={() => handleRetry(document.id)}
+                  disabled={retryingId === document.id}
+                  className="text-xs text-neutral-500 hover:text-blue-600 disabled:opacity-50"
+                >
+                  {retryingId === document.id ? 'Retrying…' : 'Retry'}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => handleDelete(document.id)}

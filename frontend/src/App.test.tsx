@@ -18,6 +18,7 @@ describe('App', () => {
         format: 'pdf',
         status: 'ready',
         error_reason: null,
+        error_category: null,
         created_at: new Date().toISOString(),
       },
     ])
@@ -52,6 +53,7 @@ describe('App', () => {
         format: 'txt',
         status: 'ready',
         error_reason: null,
+        error_category: null,
         created_at: new Date().toISOString(),
       },
     ])
@@ -74,6 +76,7 @@ describe('App', () => {
         format: 'txt',
         status: 'processing',
         error_reason: null,
+        error_category: null,
         created_at: new Date().toISOString(),
       },
     ])
@@ -111,6 +114,7 @@ describe('App', () => {
         format: 'txt',
         status: 'ready',
         error_reason: null,
+        error_category: null,
         created_at: new Date().toISOString(),
       },
     ])
@@ -136,6 +140,7 @@ describe('App', () => {
         format: 'txt',
         status: 'ready',
         error_reason: null,
+        error_category: null,
         created_at: new Date().toISOString(),
       },
     ])
@@ -163,6 +168,7 @@ describe('App', () => {
         format: 'txt',
         status: 'ready',
         error_reason: null,
+        error_category: null,
         created_at: new Date().toISOString(),
       },
       {
@@ -171,6 +177,7 @@ describe('App', () => {
         format: 'txt',
         status: 'ready',
         error_reason: null,
+        error_category: null,
         created_at: new Date().toISOString(),
       },
     ])
@@ -193,6 +200,7 @@ describe('App', () => {
         format: 'txt',
         status: 'ready',
         error_reason: null,
+        error_category: null,
         created_at: new Date().toISOString(),
       },
     ])

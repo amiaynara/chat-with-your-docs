@@ -205,3 +205,83 @@ def test_delete_document_is_scoped_to_the_owning_session(client):
 
     assert response.status_code == 404
     assert client.get("/documents").json() != []
+
+
+def test_retry_reruns_ingestion_after_a_transient_failure_is_fixed(
+    client, fake_embedding_provider
+):
+    def _boom(texts):
+        raise RuntimeError("embedding service is down")
+
+    fake_embedding_provider.embed = _boom
+
+    upload = client.post("/documents", files={"file": ("notes.txt", b"hello world", "text/plain")})
+    document_id = upload.json()["id"]
+    failed = next(d for d in client.get("/documents").json() if d["id"] == document_id)
+    assert failed["status"] == "failed"
+    assert failed["error_category"] == "system_error"
+
+    # The underlying problem is fixed — embedding works again — before retrying.
+    from tests.fakes.embeddings import FakeEmbeddingProvider
+
+    fake_embedding_provider.embed = FakeEmbeddingProvider().embed
+
+    response = client.post(f"/documents/{document_id}/retry")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ready"
+    assert body["error_reason"] is None
+    assert body["error_category"] is None
+
+
+def test_retry_is_rejected_for_a_user_error_document(client):
+    upload = client.post(
+        "/documents",
+        files={"file": ("broken.pdf", b"not actually a pdf", "application/pdf")},
+    )
+    document_id = upload.json()["id"]
+    failed = next(d for d in client.get("/documents").json() if d["id"] == document_id)
+    assert failed["error_category"] == "user_error"
+
+    response = client.post(f"/documents/{document_id}/retry")
+
+    assert response.status_code == 422
+    # The document is untouched — still failed, not silently re-queued.
+    unchanged = next(d for d in client.get("/documents").json() if d["id"] == document_id)
+    assert unchanged["status"] == "failed"
+
+
+def test_retry_is_rejected_for_a_non_failed_document(client):
+    upload = client.post("/documents", files={"file": ("notes.txt", b"hello world", "text/plain")})
+    document_id = upload.json()["id"]
+    assert client.get("/documents").json()[0]["status"] == "ready"
+
+    response = client.post(f"/documents/{document_id}/retry")
+
+    assert response.status_code == 409
+
+
+def test_retry_nonexistent_document_returns_404(client):
+    response = client.post(f"/documents/{uuid.uuid4()}/retry")
+
+    assert response.status_code == 404
+
+
+def test_retry_is_scoped_to_the_owning_session(client, fake_embedding_provider):
+    def _boom(texts):
+        raise RuntimeError("embedding service is down")
+
+    fake_embedding_provider.embed = _boom
+
+    upload = client.post("/documents", files={"file": ("notes.txt", b"hello world", "text/plain")})
+    document_id = upload.json()["id"]
+
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    other_client = TestClient(app)
+    response = other_client.post(f"/documents/{document_id}/retry")
+
+    assert response.status_code == 404
