@@ -104,5 +104,23 @@ class Settings(BaseSettings):
     # with retrieval_top_k directly instead.
     rerank_candidate_pool_size: int = 20
 
+    # Which SecretManager implementation app.providers.get_secret_manager()
+    # constructs — "local" (reads a gitignored local file; zero-setup, matching how
+    # this app runs fully offline/key-free wherever possible — see embedding_provider
+    # above) or "aws" (AWS Secrets Manager via boto3, for the deployment target
+    # described in docs/architecture.md's AWS reference panel, #16). This adapter is
+    # additive (see docs/secrets.md for the resolution-order decision): it does not
+    # replace the provider API keys above, which pydantic-settings continues to load
+    # directly from `.env`/the environment; it exists for new call sites that want a
+    # secret without going through Settings.
+    secret_manager: str = "local"
+    # LocalSecretManager's file path — one `KEY=value` pair per line. Gitignored;
+    # never commit real secrets into it. Missing file = no local secrets available
+    # (not a construction error), consistent with this app's key-free-by-default
+    # posture.
+    local_secrets_file: str = ".secrets"
+    # AWSSecretManager's AWS region. Only read when secret_manager="aws".
+    aws_secrets_region: str = "us-east-1"
+
 
 settings = Settings()

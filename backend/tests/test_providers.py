@@ -167,3 +167,45 @@ def test_get_reranker_provider_wires_settings_into_cohere_rerank_provider(monkey
         "model": settings.reranker_model,
         "timeout_seconds": settings.provider_timeout_seconds,
     }
+
+
+def test_get_secret_manager_wires_settings_into_local_secret_manager(monkeypatch):
+    captured = {}
+
+    class StubLocalSecrets:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(providers, "LocalSecretManager", StubLocalSecrets)
+    monkeypatch.setattr(settings, "secret_manager", "local")
+
+    result = providers.get_secret_manager()
+
+    assert isinstance(result, StubLocalSecrets)
+    assert captured == {"file_path": settings.local_secrets_file}
+
+
+def test_get_secret_manager_wires_settings_into_aws_secret_manager(monkeypatch):
+    captured = {}
+
+    class StubAWSSecrets:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(providers, "AWSSecretManager", StubAWSSecrets)
+    monkeypatch.setattr(settings, "secret_manager", "aws")
+
+    result = providers.get_secret_manager()
+
+    assert isinstance(result, StubAWSSecrets)
+    assert captured == {
+        "region": settings.aws_secrets_region,
+        "timeout_seconds": settings.provider_timeout_seconds,
+    }
+
+
+def test_get_secret_manager_raises_on_unknown_manager_name(monkeypatch):
+    monkeypatch.setattr(settings, "secret_manager", "bogus")
+
+    with pytest.raises(RuntimeError, match="Unknown SECRET_MANAGER"):
+        providers.get_secret_manager()

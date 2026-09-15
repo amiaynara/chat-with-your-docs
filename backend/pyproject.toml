@@ -33,6 +33,7 @@ dev = [
     "ruff>=0.7",
     "mypy>=1.13",
     "pytest-cov>=7.1.0",
+    "moto[secretsmanager]>=5.2.3",
 ]
 
 # LocalEmbeddingProvider (app/adapters/embeddings.py) only ever runs on CPU — Docker

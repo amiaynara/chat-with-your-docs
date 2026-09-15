@@ -25,6 +25,10 @@ Retrieval combines vector and keyword search by default (no extra setup/keys nee
 optional reranking step on top of that is off by default; set `RERANKER_ENABLED=true` and
 `COHERE_API_KEY` to turn it on. See `docs/architecture.md`'s ticket ledger for both.
 
+Provider credentials above are read directly from `.env`/the environment by default. A separate,
+additive `SecretManager` adapter (`local` file, or `aws` for AWS Secrets Manager) is available for
+new code that wants to fetch a secret at runtime instead — see `docs/secrets.md`.
+
 ```
 docker compose up
 ```

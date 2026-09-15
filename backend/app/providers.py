@@ -11,6 +11,7 @@ from app.adapters.embeddings import (
 )
 from app.adapters.llm import AnthropicLLMProvider, GeminiLLMProvider, LLMProvider
 from app.adapters.reranker import CohereRerankProvider, RerankerProvider
+from app.adapters.secrets import AWSSecretManager, LocalSecretManager, SecretManager
 from app.adapters.storage import ObjectStorage, S3ObjectStorage
 from app.config import settings
 
@@ -83,3 +84,17 @@ def get_reranker_provider() -> RerankerProvider:
         model=settings.reranker_model,
         timeout_seconds=settings.provider_timeout_seconds,
     )
+
+
+def get_secret_manager() -> SecretManager:
+    if settings.secret_manager == "local":
+        return LocalSecretManager(file_path=settings.local_secrets_file)
+    elif settings.secret_manager == "aws":
+        return AWSSecretManager(
+            region=settings.aws_secrets_region,
+            timeout_seconds=settings.provider_timeout_seconds,
+        )
+    else:
+        raise RuntimeError(
+            f"Unknown SECRET_MANAGER={settings.secret_manager!r}; expected 'local' or 'aws'."
+        )

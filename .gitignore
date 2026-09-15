@@ -15,6 +15,9 @@ backend/htmlcov/
 backend/.env
 .env
 
+# Local secrets file (LocalSecretManager, app/adapters/secrets.py)
+backend/.secrets
+
 # md files
 ideas.md
 
