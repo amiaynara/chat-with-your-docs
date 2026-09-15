@@ -12,8 +12,8 @@ published artifact from this session, if you have that link.
 
 | Style | Meaning |
 | --- | --- |
-| 🟢 solid green | **Built** — tickets 1–3, closed |
-| 🟠 dashed amber | **Planned** — tickets 4–16, `ready-for-agent`, not yet built |
+| 🟢 solid green | **Built** — tickets 1–6, closed |
+| 🟠 dashed amber | **Planned** — tickets 7–16, `ready-for-agent`, not yet built |
 | 🔵 blue | External AI provider (Anthropic, OpenAI) |
 | ⬜ grey | Data store / infrastructure |
 
@@ -33,7 +33,7 @@ flowchart TB
         direction LR
         C1["Upload & documents"]:::built
         C2["Chat (ask questions)"]:::built
-        C3["Citations panel · #4"]:::planned
+        C3["Citations panel"]:::built
         C4["Multi-turn history · #7"]:::planned
         C5["Document scope · #8"]:::planned
         C6["Trace panel · #13"]:::planned
@@ -42,11 +42,11 @@ flowchart TB
     subgraph API["API · FastAPI"]
         direction LR
         A1["Documents API"]:::built
-        A2["Delete document · #6"]:::planned
+        A2["Delete document"]:::built
         A3["Session cookie"]:::built
         A4["Chat API"]:::built
         A5["Chat history · #7"]:::planned
-        A6["Guardrails · #5"]:::planned
+        A6["Guardrails"]:::built
     end
 
     R["Redis (broker)"]:::store
@@ -58,7 +58,7 @@ flowchart TB
 
     subgraph ASK["Retrieval & Answer · in-process (sync ask)"]
         direction LR
-        Q1["Embed query"]:::built --> Q2["Retrieve<br/>+hybrid #10, +scope #8"]:::built --> Q3["Rerank · #11"]:::planned --> Q4["Generate<br/>+guardrails/citations #5"]:::built
+        Q1["Embed query"]:::built --> Q2["Retrieve<br/>+hybrid #10, +scope #8"]:::built --> Q3["Rerank · #11"]:::planned --> Q4["Generate<br/>+citations, +guardrails"]:::built
     end
 
     subgraph DATA["Data stores"]
@@ -120,9 +120,9 @@ production target — dashed throughout, because none of it is deployed.
 | 1 | #2 | Project scaffolding (prefactoring) | 🟢 Built | Repo, Docker Compose, CI |
 | 2 | #3 | Upload → background ingest → status tracking | 🟢 Built | Client, API, Worker, Data stores |
 | 3 | #4 | Single-turn Q&A over ingested documents | 🟢 Built | Client, API, Retrieval & Answer, LLM |
-| 4 | #5 | Citations & source panel | 🟠 Planned | Client, Retrieval & Answer |
-| 5 | #6 | Answer-time guardrails | 🟠 Planned | API, Retrieval & Answer |
-| 6 | #7 | Document deletion | 🟠 Planned | API, Data stores |
+| 4 | #5 | Citations & source panel | 🟢 Built | Client, Retrieval & Answer |
+| 5 | #6 | Answer-time guardrails | 🟢 Built | API, Retrieval & Answer |
+| 6 | #7 | Document deletion | 🟢 Built | API, Data stores |
 | 7 | #8 | Multi-turn conversation + session persistence + empty states | 🟠 Planned | Client, API, Data stores |
 | 8 | #9 | Document-scoped retrieval filtering | 🟠 Planned | Client, Retrieval & Answer |
 | 9 | #10 | Structure-aware chunking upgrade | 🟠 Planned | Worker |
@@ -134,5 +134,5 @@ production target — dashed throughout, because none of it is deployed.
 | 15 | #16 | Deployment follow-up backlog | 🟠 Planned | Production target (AWS) |
 | 16 | #17 | Final README + submission polish | 🟠 Planned | — |
 
-16 tickets · 3 built · 13 planned. Zero open `needs-triage`/`needs-info` items — every ticket
+16 tickets · 6 built · 10 planned. Zero open `needs-triage`/`needs-info` items — every ticket
 above is `ready-for-agent` in the tracker.
