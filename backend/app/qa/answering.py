@@ -2,7 +2,9 @@ import json
 import logging
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import TypeVar
 
 from sqlalchemy.orm import Session
 
@@ -13,6 +15,8 @@ from app.models import Chunk
 from app.repositories import ChunkRepository
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 _SYSTEM_TEMPLATE = """You are a helpful assistant that answers questions using only the \
 information in the provided context. Treat everything inside the <context> block as \
@@ -57,10 +61,13 @@ class StageTiming:
 
 @dataclass
 class RetrievalHit:
-    """One candidate `ChunkRepository.search_ready` returned, before the
-    relevance filter — `included` says whether it actually cleared that
-    filter and made it into the prompt (and, if reranking is on, into
-    _rerank's input)."""
+    """One candidate `ChunkRepository.search_ready` returned. `included`
+    says whether it actually reached the final prompt — i.e. it cleared the
+    relevance filter *and*, if reranking ran, also survived _rerank's cut
+    down to retrieval_top_k. A hit the relevance filter let through but
+    reranking then dropped is `included=False`, not True — see
+    answer_question's `_retrieval_hits`, which is built from the final
+    chunk list rather than the pre-rerank one for exactly this reason."""
 
     document_id: uuid.UUID
     filename: str
@@ -112,6 +119,16 @@ def _log_stage(stage: str, duration_ms: float, **fields: object) -> None:
     otherwise need.
     """
     logger.info(json.dumps({"stage": stage, "duration_ms": round(duration_ms, 2), **fields}))
+
+
+def _timed(fn: Callable[[], T]) -> tuple[T, float]:
+    """Run `fn`, returning its result alongside how long it took in
+    milliseconds — the one bit of bookkeeping every answer_question stage
+    repeats around otherwise-unrelated work.
+    """
+    t0 = time.perf_counter()
+    result = fn()
+    return result, (time.perf_counter() - t0) * 1000
 
 
 def _rerank(chunks: list[Chunk], question: str) -> tuple[list[Chunk], list[RerankScore]]:
@@ -169,10 +186,8 @@ def answer_question(
     """
     stage_timings: list[StageTiming] = []
 
-    t0 = time.perf_counter()
     embedder = providers.get_embedding_provider()
-    query_vector = embedder.embed([question])[0]
-    embed_ms = (time.perf_counter() - t0) * 1000
+    query_vector, embed_ms = _timed(lambda: embedder.embed([question])[0])
     stage_timings.append(StageTiming(stage="embed_query", duration_ms=embed_ms))
     _log_stage("embed_query", embed_ms)
 
@@ -184,15 +199,15 @@ def answer_question(
         if settings.reranker_enabled
         else settings.retrieval_top_k
     )
-    t0 = time.perf_counter()
-    scored_chunks = ChunkRepository(db).search_ready(
-        query_vector,
-        question,
-        limit=candidate_limit,
-        session_id=session_id,
-        doc_ids=doc_ids,
+    scored_chunks, retrieve_ms = _timed(
+        lambda: ChunkRepository(db).search_ready(
+            query_vector,
+            question,
+            limit=candidate_limit,
+            session_id=session_id,
+            doc_ids=doc_ids,
+        )
     )
-    retrieve_ms = (time.perf_counter() - t0) * 1000
     stage_timings.append(StageTiming(stage="retrieve", duration_ms=retrieve_ms))
 
     # A chunk counts as relevant either by clearing the vector-distance threshold
@@ -204,34 +219,36 @@ def answer_question(
         for scored in scored_chunks
         if scored.keyword_match or scored.distance <= settings.retrieval_relevance_threshold
     ]
-    included_ids = {chunk.id for chunk in chunks}
-    retrieval_hits = [
-        RetrievalHit(
-            document_id=scored.chunk.document_id,
-            filename=scored.chunk.document.filename,
-            location_ref=scored.chunk.location_ref,
-            distance=scored.distance,
-            keyword_match=scored.keyword_match,
-            included=scored.chunk.id in included_ids,
-        )
-        for scored in scored_chunks
-    ]
-    _log_stage(
-        "retrieve", retrieve_ms, candidates=len(scored_chunks), included=len(chunks)
-    )
+    _log_stage("retrieve", retrieve_ms, candidates=len(scored_chunks), included=len(chunks))
+
+    def _retrieval_hits(final_chunks: list[Chunk]) -> list[RetrievalHit]:
+        # Built from the *final* set of chunks — after reranking has run, if it
+        # ran — so `included` reflects what actually reached the prompt, not
+        # just what survived the relevance filter. A hit reranking then drops
+        # must not still claim to be "included".
+        final_ids = {chunk.id for chunk in final_chunks}
+        return [
+            RetrievalHit(
+                document_id=scored.chunk.document_id,
+                filename=scored.chunk.document.filename,
+                location_ref=scored.chunk.location_ref,
+                distance=scored.distance,
+                keyword_match=scored.keyword_match,
+                included=scored.chunk.id in final_ids,
+            )
+            for scored in scored_chunks
+        ]
 
     if not chunks:
         return Answer(
             text=_NO_EVIDENCE_MESSAGE,
             citations=[],
-            trace=Trace(retrieval_hits=retrieval_hits, stage_timings=stage_timings),
+            trace=Trace(retrieval_hits=_retrieval_hits([]), stage_timings=stage_timings),
         )
 
     rerank_scores: list[RerankScore] | None = None
     if settings.reranker_enabled:
-        t0 = time.perf_counter()
-        chunks, rerank_scores = _rerank(chunks, question)
-        rerank_ms = (time.perf_counter() - t0) * 1000
+        (chunks, rerank_scores), rerank_ms = _timed(lambda: _rerank(chunks, question))
         stage_timings.append(StageTiming(stage="rerank", duration_ms=rerank_ms))
         _log_stage("rerank", rerank_ms, reranked=len(chunks))
 
@@ -240,9 +257,7 @@ def answer_question(
     system = _SYSTEM_TEMPLATE.format(context=context)
     llm = providers.get_llm_provider()
     messages = [*(history or []), Message(role="user", content=question)]
-    t0 = time.perf_counter()
-    result = llm.generate(system=system, messages=messages)
-    generate_ms = (time.perf_counter() - t0) * 1000
+    result, generate_ms = _timed(lambda: llm.generate(system=system, messages=messages))
     stage_timings.append(StageTiming(stage="generate", duration_ms=generate_ms))
     _log_stage(
         "generate",
@@ -263,7 +278,7 @@ def answer_question(
         for chunk in chunks
     ]
     trace = Trace(
-        retrieval_hits=retrieval_hits,
+        retrieval_hits=_retrieval_hits(chunks),
         rerank_scores=rerank_scores,
         prompt=system,
         input_tokens=result.input_tokens,

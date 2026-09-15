@@ -103,6 +103,28 @@ def test_trace_includes_rerank_scores_when_reranking_is_enabled(
     assert "rerank" in [timing["stage"] for timing in trace["stage_timings"]]
 
 
+def test_trace_marks_a_hit_reranking_dropped_as_not_included(
+    client, fake_reranker_provider, monkeypatch
+):
+    # More candidate documents than settings.retrieval_top_k (5) all clear the
+    # keyword-match relevance filter, so reranking (which narrows to top_k)
+    # must drop at least one — that one's retrieval_hits entry must flip to
+    # included=False, not stay True from before reranking ran.
+    monkeypatch.setattr(config.settings, "reranker_enabled", True)
+    for i in range(6):
+        content = b"The secret launch code is Wobble-42."
+        client.post("/documents", files={"file": (f"notes{i}.txt", content, "text/plain")})
+
+    response = client.post("/chat/messages", json={"question": "What is the secret launch code?"})
+
+    assert response.status_code == 200
+    trace = response.json()["trace"]
+    assert len(trace["retrieval_hits"]) == 6
+    included_count = sum(1 for hit in trace["retrieval_hits"] if hit["included"])
+    assert included_count == 5  # settings.retrieval_top_k
+    assert any(not hit["included"] for hit in trace["retrieval_hits"])
+
+
 def test_answer_with_no_documents_still_includes_an_empty_trace(client):
     response = client.post("/chat/messages", json={"question": "What is the secret launch code?"})
 
