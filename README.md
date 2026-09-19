@@ -98,3 +98,18 @@ npm install --legacy-peer-deps
 npm run dev
 npm run test:coverage  # 100% statements/branches/functions/lines, enforced via vite.config.ts
 ```
+
+## Production deployment (deferred)
+
+This submission runs locally only (`docker compose up`) — no live/hosted deployment, by design
+(see issue #1's Out of Scope). `docs/architecture.md`'s AWS reference panel documents the intended
+production target (ALB + ECS Fargate, RDS Postgres/pgvector, ElastiCache Redis, S3, Secrets
+Manager, CloudWatch), but getting there is real, separate work, tracked as concrete issues rather
+than left as an implicit promise:
+
+- **[Infrastructure as Code](https://github.com/NP-Assignments-Labs/fde-amiay-narayan-41f10caa/issues/23)** — provision the AWS reference architecture via Terraform/CDK instead of manual console setup, so the environment is reproducible and reviewable as code.
+- **[Health checks](https://github.com/NP-Assignments-Labs/fde-amiay-narayan-41f10caa/issues/24)** — real liveness/readiness endpoints (beyond the current bare `GET /health`) wired into ECS Fargate task health checks and the ALB target group.
+- **[Auth](https://github.com/NP-Assignments-Labs/fde-amiay-narayan-41f10caa/issues/25)** — real user accounts and multi-tenant data isolation, replacing the current anonymous-session-cookie-only model.
+- **[Rate limiting](https://github.com/NP-Assignments-Labs/fde-amiay-narayan-41f10caa/issues/26)** — per-session/per-IP throttling on upload and chat, both for abuse protection and to bound real provider API cost once this is publicly reachable.
+- **[Secrets management (production cutover)](https://github.com/NP-Assignments-Labs/fde-amiay-narayan-41f10caa/issues/27)** — the code-level adapter already exists (`SecretManager`, `docs/secrets.md`); what's deferred is the real AWS account, a least-privilege IAM role, and a rotation policy behind it.
+- **[Live cutover](https://github.com/NP-Assignments-Labs/fde-amiay-narayan-41f10caa/issues/28)** — actually standing up the provisioned infrastructure, pointing traffic at it, and a rollback plan.

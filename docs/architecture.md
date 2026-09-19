@@ -132,10 +132,16 @@ production target — dashed throughout, because none of it is deployed.
 | 12 | #13 | Evaluation harness | 🟢 Built | Evaluation & Quality |
 | 13 | #14 | In-app trace panel + structured logging | 🟢 Built | Client, Observability |
 | 14 | #15 | CI: add eval harness job | 🟢 Built | CI/CD, Evaluation & Quality |
-| 15 | #16 | Deployment follow-up backlog | 🟠 Planned | Production target (AWS) |
+| 15 | #16 | Deployment follow-up backlog | 🟢 Built | Production target (AWS) |
 | 16 | #17 | Final README + submission polish | 🟠 Planned | — |
 
-16 tickets · 14 built · 2 planned. Zero open `needs-triage`/`needs-info` items — every ticket
-above is `ready-for-agent` in the tracker. (Two further tickets, #18 API documentation and #19
-document failure taxonomy + retry, were opened after this plan was frozen and aren't reflected
-in the diagram/ledger above — both are since built.)
+16 tickets · 15 built · 1 planned. Zero open `needs-triage`/`needs-info` items — every ticket
+above is `ready-for-agent` in the tracker. (Three further tickets, #18 API documentation, #19
+document failure taxonomy + retry, and #22 secret manager adapter, were opened after this plan
+was frozen and aren't reflected in the diagram/ledger above — all three are since built.)
+
+Ticket 15/#16's deferred production work itself is now tracked as six real, linked issues (IaC,
+health checks, auth, rate limiting, secrets management cutover, live cutover — see the README's
+"Production deployment (deferred)" section) rather than left as prose here; none of those six are
+`ready-for-agent` (deliberately — deferred/out-of-scope future work, not part of this submission's
+build), so they're intentionally not added as further rows in this ledger.
