@@ -64,6 +64,17 @@ settings.session_cookie_secure = False
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 
+# get_llm_provider()/get_embedding_provider()/get_reranker_provider() resolve their API
+# keys through get_secret_manager() first (app/providers.py), which — at the default
+# SECRET_MANAGER=local — reads settings.local_secrets_file relative to the process's cwd
+# (backend/ for a `uv run pytest` invocation). Left at its real ".secrets" default,
+# test_providers.py's unit tests would silently pick up whatever real secrets a
+# developer has populated in backend/.secrets for local dev. Pointing it at a path that
+# never exists keeps LocalSecretManager returning no secrets in tests, so those tests
+# exercise (and assert on) the settings/.env fallback deterministically, the same as
+# before get_secret_manager() existed.
+settings.local_secrets_file = str(BACKEND_DIR / "tests" / "_no_such_secrets_file")
+
 
 def _ensure_database_exists(database_url: str) -> None:
     url = make_url(database_url)

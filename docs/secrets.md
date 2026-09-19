@@ -71,30 +71,36 @@ application config in the first place.
 
 ## Resolution order: how this relates to the existing `*_API_KEY` settings
 
-`app/config.py`'s `Settings` (`anthropic_api_key`, `openai_api_key`, `google_api_key`,
-`cohere_api_key`, the object-storage credentials, …) continue to be read exactly as before —
-directly off pydantic-settings' `.env`/environment loading, unchanged by this adapter. This is a
-deliberate, additive decision, not an oversight:
+`app/config.py`'s `Settings` still loads `anthropic_api_key`/`openai_api_key`/`google_api_key`/
+`cohere_api_key` from `.env`/the environment exactly as before — `SecretManager` doesn't replace
+that loading, it's layered **in front of** it as the preferred source, with the `Settings` value
+kept as a fallback:
 
-- Routing every existing provider key through `SecretManager` would mean either constructing a
-  `SecretManager` at `Settings` class definition time (before config/DI wiring exists) or
-  reworking every adapter's construction path in `app/providers.py` — a much larger, riskier
-  change than "add a secret-retrieval seam," and out of scope for what this ticket asks for
-  (issue #22 is additive on top of the existing adapter pattern, explicitly not blocked by or
-  blocking other tickets).
-- The two concerns are genuinely different in shape: `Settings` is "what's the current
-  configuration for this process" (typed, validated, read once at import), while `SecretManager`
-  is "fetch this one named credential from wherever it actually lives" (a runtime call, potentially
-  to a remote service, with its own retry/timeout/error-typing needs) — collapsing them would mean
-  `Settings` construction itself could make a network call.
+- `app/providers.py`'s `get_llm_provider()`, `get_embedding_provider()`, and
+  `get_reranker_provider()` each resolve their API key via a shared `_resolve_secret(name,
+  fallback)` helper: `get_secret_manager().get_secret(name)` first, falling back to the matching
+  `Settings` value only if the secret manager raises `SecretNotFoundError` for that name (e.g. the
+  key isn't present in `backend/.secrets`, or `local_secrets_file` points at a file that doesn't
+  exist — the zero-setup default).
+- Concretely: `ANTHROPIC_API_KEY` → `_resolve_secret("ANTHROPIC_API_KEY", settings.anthropic_api_key)`,
+  and likewise for `GOOGLE_API_KEY`, `OPENAI_API_KEY`, `COHERE_API_KEY`. Object storage's
+  credentials (`OBJECT_STORAGE_ACCESS_KEY`/`OBJECT_STORAGE_SECRET_KEY`) are deliberately **not**
+  wired through this — those are local MinIO dev defaults, not a production secret this ticket's
+  `backend/.secrets` file is meant to hold; `get_object_storage()` is unchanged.
+- This means either source works standalone: put a key only in `backend/.secrets` (or AWS Secrets
+  Manager, with `SECRET_MANAGER=aws`) and drop it from `.env`, or keep it only in `.env` as before
+  — both resolve to the same credential reaching the provider adapter. Setting a key in *both*
+  places is harmless; the secret manager wins.
+- Why a fallback instead of making the secret manager the sole source: this app is meant to keep
+  running key-free out of the box (`docs/embeddings.md`'s `EMBEDDING_PROVIDER=local` default,
+  README's "works fully without a key" framing) — a bare `SecretNotFoundError` bubbling out of
+  `get_llm_provider()` on every request with no `ANTHROPIC_API_KEY` configured anywhere would trade
+  a clear, existing "missing credentials" failure (a real API call returning 401, surfaced by
+  `qa/answering.py`) for a different failure at construction time, for no behavioral benefit — the
+  fallback keeps that behavior identical whichever source (or neither) is configured.
 
-So today: **new code that needs a secret at runtime should call `get_secret_manager().get_secret(name)`
-directly, rather than adding another field to `Settings`.** The existing `*_API_KEY` settings are
-left as they are. A future ticket could migrate them onto this adapter (e.g. a custom
-`pydantic-settings` source that resolves through `SecretManager` instead of raw env vars) if/when
-that's actually needed — deliberately not done here, the same "don't build it until it's a
-validated requirement" posture the rest of this codebase's config already takes (see
-`chunk_overlap_ratio`/`retrieval_relevance_threshold` in `app/config.py`).
+`get_object_storage()` and the rest of `Settings` (non-secret config like `chunk_size_chars`,
+`retrieval_top_k`, …) are untouched — this only applies to the four provider API keys above.
 
 ## Tests
 

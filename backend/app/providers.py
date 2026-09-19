@@ -11,9 +11,41 @@ from app.adapters.embeddings import (
 )
 from app.adapters.llm import AnthropicLLMProvider, GeminiLLMProvider, LLMProvider
 from app.adapters.reranker import CohereRerankProvider, RerankerProvider
-from app.adapters.secrets import AWSSecretManager, LocalSecretManager, SecretManager
+from app.adapters.secrets import (
+    AWSSecretManager,
+    LocalSecretManager,
+    SecretManager,
+    SecretNotFoundError,
+)
 from app.adapters.storage import ObjectStorage, S3ObjectStorage
 from app.config import settings
+
+
+def get_secret_manager() -> SecretManager:
+    if settings.secret_manager == "local":
+        return LocalSecretManager(file_path=settings.local_secrets_file)
+    elif settings.secret_manager == "aws":
+        return AWSSecretManager(
+            region=settings.aws_secrets_region,
+            timeout_seconds=settings.provider_timeout_seconds,
+        )
+    else:
+        raise RuntimeError(
+            f"Unknown SECRET_MANAGER={settings.secret_manager!r}; expected 'local' or 'aws'."
+        )
+
+
+def _resolve_secret(name: str, fallback: str) -> str:
+    """Resolve credential `name` via the configured SecretManager (local file or AWS
+    Secrets Manager, per SECRET_MANAGER — see docs/secrets.md), falling back to
+    `fallback` (a Settings value, itself loaded from `.env`/the environment) when the
+    secret manager has no value for `name` — e.g. an empty/missing local secrets file,
+    the zero-setup default this app runs with out of the box.
+    """
+    try:
+        return get_secret_manager().get_secret(name)
+    except SecretNotFoundError:
+        return fallback
 
 
 def get_object_storage() -> ObjectStorage:
@@ -35,7 +67,7 @@ def get_embedding_provider() -> EmbeddingProvider:
         )
     elif settings.embedding_provider == "openai":
         provider = OpenAIEmbeddingProvider(
-            api_key=settings.openai_api_key,
+            api_key=_resolve_secret("OPENAI_API_KEY", settings.openai_api_key),
             model=settings.embedding_model,
             model_version=settings.embedding_model_version,
             timeout_seconds=settings.provider_timeout_seconds,
@@ -62,13 +94,13 @@ def get_embedding_provider() -> EmbeddingProvider:
 def get_llm_provider() -> LLMProvider:
     if settings.llm_provider == "google":
         return GeminiLLMProvider(
-            api_key=settings.google_api_key,
+            api_key=_resolve_secret("GOOGLE_API_KEY", settings.google_api_key),
             model=settings.google_llm_model,
             timeout_seconds=settings.provider_timeout_seconds,
         )
     elif settings.llm_provider == "anthropic":
         return AnthropicLLMProvider(
-            api_key=settings.anthropic_api_key,
+            api_key=_resolve_secret("ANTHROPIC_API_KEY", settings.anthropic_api_key),
             model=settings.llm_model,
             timeout_seconds=settings.provider_timeout_seconds,
         )
@@ -80,21 +112,7 @@ def get_llm_provider() -> LLMProvider:
 
 def get_reranker_provider() -> RerankerProvider:
     return CohereRerankProvider(
-        api_key=settings.cohere_api_key,
+        api_key=_resolve_secret("COHERE_API_KEY", settings.cohere_api_key),
         model=settings.reranker_model,
         timeout_seconds=settings.provider_timeout_seconds,
     )
-
-
-def get_secret_manager() -> SecretManager:
-    if settings.secret_manager == "local":
-        return LocalSecretManager(file_path=settings.local_secrets_file)
-    elif settings.secret_manager == "aws":
-        return AWSSecretManager(
-            region=settings.aws_secrets_region,
-            timeout_seconds=settings.provider_timeout_seconds,
-        )
-    else:
-        raise RuntimeError(
-            f"Unknown SECRET_MANAGER={settings.secret_manager!r}; expected 'local' or 'aws'."
-        )

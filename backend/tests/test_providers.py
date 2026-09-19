@@ -4,12 +4,20 @@ Each get_*() function is stubbed at the class it constructs, so these assert
 "providers.py passes the right settings to the right adapter" without needing
 a live network connection. The adapters' own behavior (real client calls,
 error classification) is covered separately in their own test modules.
+
+get_llm_provider()/get_embedding_provider()/get_reranker_provider() resolve their API
+keys through get_secret_manager() first, falling back to the matching Settings/.env
+value when the secret manager has none (see _resolve_secret and
+tests/conftest.py's settings.local_secrets_file override, which keeps
+get_secret_manager() returning no secrets by default here so the plain
+"wires settings" tests below exercise that fallback path deterministically).
 """
 
 import pytest
 
 from app import providers
 from app.config import settings
+from tests.fakes.secrets import FakeSecretManager
 
 
 def test_get_object_storage_wires_settings_into_s3_object_storage(monkeypatch):
@@ -167,6 +175,74 @@ def test_get_reranker_provider_wires_settings_into_cohere_rerank_provider(monkey
         "model": settings.reranker_model,
         "timeout_seconds": settings.provider_timeout_seconds,
     }
+
+
+def test_get_llm_provider_prefers_a_secret_manager_value_over_the_settings_fallback(monkeypatch):
+    captured = {}
+
+    class StubLLM:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(providers, "AnthropicLLMProvider", StubLLM)
+    monkeypatch.setattr(settings, "llm_provider", "anthropic")
+    monkeypatch.setattr(
+        providers,
+        "get_secret_manager",
+        lambda: FakeSecretManager({"ANTHROPIC_API_KEY": "from-secret-manager"}),
+    )
+
+    result = providers.get_llm_provider()
+
+    assert isinstance(result, StubLLM)
+    assert captured["api_key"] == "from-secret-manager"
+
+
+def test_get_embedding_provider_prefers_a_secret_manager_value_over_the_settings_fallback(
+    monkeypatch,
+):
+    captured = {}
+
+    class StubEmbedding:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            self.model_name = kwargs["model"]
+            self.dimensions = settings.embedding_dimensions
+
+    monkeypatch.setattr(providers, "OpenAIEmbeddingProvider", StubEmbedding)
+    monkeypatch.setattr(settings, "embedding_provider", "openai")
+    monkeypatch.setattr(
+        providers,
+        "get_secret_manager",
+        lambda: FakeSecretManager({"OPENAI_API_KEY": "from-secret-manager"}),
+    )
+
+    result = providers.get_embedding_provider()
+
+    assert isinstance(result, StubEmbedding)
+    assert captured["api_key"] == "from-secret-manager"
+
+
+def test_get_reranker_provider_prefers_a_secret_manager_value_over_the_settings_fallback(
+    monkeypatch,
+):
+    captured = {}
+
+    class StubReranker:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(providers, "CohereRerankProvider", StubReranker)
+    monkeypatch.setattr(
+        providers,
+        "get_secret_manager",
+        lambda: FakeSecretManager({"COHERE_API_KEY": "from-secret-manager"}),
+    )
+
+    result = providers.get_reranker_provider()
+
+    assert isinstance(result, StubReranker)
+    assert captured["api_key"] == "from-secret-manager"
 
 
 def test_get_secret_manager_wires_settings_into_local_secret_manager(monkeypatch):
