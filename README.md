@@ -80,16 +80,14 @@ Runs locally only for this submission (`docker compose up`) — no live deployme
 | Live cutover | ❌ Not built — deploy, DNS, rollback plan. [Issue #28](https://github.com/NP-Assignments-Labs/fde-amiay-narayan-41f10caa/issues/28). |
 | HA / hardening | ❌ Single-AZ RDS, single-node Redis, `RemovalPolicy.DESTROY`, no ACM cert, no autoscaling. Full list: [`infra/README.md`](infra/README.md). |
 
-**Why AWS, not GCP/Azure/Cloudflare**: ECS Fargate + RDS + ElastiCache + S3 maps directly onto
-this app's actual shape — two stateless compute services, one relational store with a vector
-extension, one cache/broker, one blob store. No need for a bigger platform (EKS/GKE, a managed
-vector DB) at this scale.
+**Why AWS, not GCP/Azure/Cloudflare**: My familiarity with the tech stack: ECS Fargate + RDS
++ ElastiCache + S3 maps directly onto this app's actual shape — two stateless compute services, 
+one relational store with a vector extension, one cache/broker, one blob store.
 
 ## RAG and LLM approach and decisions
 
-- **LLM** — Anthropic Claude (`claude-haiku-4-5`). *Why*: answering is one stateless call per
-  question, no agent loop, no tool use — a bigger model buys nothing. Second implementation:
-  Google Gemini (`LLM_PROVIDER=google`), a real free tier for running this without a paid key.
+- **LLM** — An swappable set of implementation of the popular LLMs out there: Haiku, Gemini they are 
+  cheap and perfect for development and POC stage.
   Details: [`docs/llm-providers.md`](docs/llm-providers.md).
 - **Embedding model** — local `sentence-transformers` (`BAAI/bge-small-en-v1.5`, 384-dim),
   default. *Why*: zero cost, zero key, runs on-machine, ~parity with OpenAI's
@@ -99,7 +97,7 @@ vector DB) at this scale.
 - **Vector database** — Postgres + `pgvector`, not a dedicated vector DB. *Why*: one datastore
   instead of two. Hybrid search (vector + full-text) becomes one SQL query, not a fan-out that
   needs reconciling.
-- **Orchestration framework** — none. No LangChain, no LlamaIndex. *Why*: the whole pipeline
+- **Orchestration framework** — none as of now (e.g. LangChain). *Why*: the whole pipeline
   (`answer_question` in `backend/app/qa/answering.py`) is ~130 lines of plain Python — embed,
   retrieve, optionally rerank, prompt, generate, cite. No agent loop, no dynamic tool selection.
   A framework adds a dependency and an abstraction layer without buying anything back here.
@@ -108,10 +106,13 @@ vector DB) at this scale.
   History is passed as prior turns, capped at the last 10 messages. Citations are built from
   exactly the chunks placed in `<context>` — never the wider candidate pool — so every citation
   is traceable to something the model actually saw.
-- **Guardrails** — two layers. Deterministic: no chunk clears the relevance threshold or matches
-  keyword search → refuse without calling the LLM. Model-level: the system prompt instructs a
-  plain "I don't have enough information" instead of a guess. Verified live, not just unit-tested
-  — a single-document corpus asked an unrelated question refused correctly.
+- **Guardrails** — two layers, so a bad answer has to get past both. The first is deterministic:
+  if nothing retrieved clears the relevance threshold and nothing matches on keyword search, the
+  app refuses outright, before the LLM is ever called — no room for a plausible-sounding
+  hallucination to slip through on clever phrasing. The second lives in the prompt itself: the
+  system prompt tells the model to say plainly when it doesn't have enough information instead of
+  guessing. This was checked live, not just with a unit test — a single-document corpus was asked
+  a question it had no answer for, and it correctly said so instead of making something up.
 - **Quality** — `backend/app/eval/`: a golden Q&A set scored for retrieval hit-rate and
   LLM-as-judge faithfulness, run through both vector-only and vector+rerank so the reranker's
   contribution is a measured delta, not an assumption. Runs in CI when judge/reranker keys are set.
