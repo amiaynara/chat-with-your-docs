@@ -102,14 +102,17 @@ npm run test:coverage  # 100% statements/branches/functions/lines, enforced via 
 ## Production deployment (deferred)
 
 This submission runs locally only (`docker compose up`) — no live/hosted deployment, by design
-(see issue #1's Out of Scope). `docs/architecture.md`'s AWS reference panel documents the intended
+(see issue #1's Out of Scope). `docs/architecture.md`'s [AWS deployment
+topology](docs/architecture.md#aws-deployment-topology-infra-issue-23) documents the intended
 production target (ALB + ECS Fargate, RDS Postgres/pgvector, ElastiCache Redis, S3, Secrets
-Manager, CloudWatch), but getting there is real, separate work, tracked as concrete issues rather
-than left as an implicit promise:
+Manager, CloudWatch) with a full diagram, and `infra/`'s AWS CDK app provisions all of it as real,
+runnable code — `cdk deploy` would stand it up against a real AWS account; nobody has run it
+against one. Getting to an actual live deployment is separate work, tracked as concrete issues
+rather than left as an implicit promise:
 
-- **[Infrastructure as Code](https://github.com/NP-Assignments-Labs/fde-amiay-narayan-41f10caa/issues/23)** — provision the AWS reference architecture via Terraform/CDK instead of manual console setup, so the environment is reproducible and reviewable as code.
-- **[Health checks](https://github.com/NP-Assignments-Labs/fde-amiay-narayan-41f10caa/issues/24)** — real liveness/readiness endpoints (beyond the current bare `GET /health`) wired into ECS Fargate task health checks and the ALB target group.
+- **[Infrastructure as Code](https://github.com/NP-Assignments-Labs/fde-amiay-narayan-41f10caa/issues/23)** — ✅ built: `infra/` (AWS CDK, Python) provisions the whole reference architecture; see `infra/README.md` for deploy steps and hardening notes, and `docs/architecture.md` for the topology diagram.
+- **[Health checks](https://github.com/NP-Assignments-Labs/fde-amiay-narayan-41f10caa/issues/24)** — ✅ built as part of the same CDK stack: the ALB target group's health check targets the existing `GET /health`.
 - **[Auth](https://github.com/NP-Assignments-Labs/fde-amiay-narayan-41f10caa/issues/25)** — real user accounts and multi-tenant data isolation, replacing the current anonymous-session-cookie-only model.
 - **[Rate limiting](https://github.com/NP-Assignments-Labs/fde-amiay-narayan-41f10caa/issues/26)** — per-session/per-IP throttling on upload and chat, both for abuse protection and to bound real provider API cost once this is publicly reachable.
-- **[Secrets management (production cutover)](https://github.com/NP-Assignments-Labs/fde-amiay-narayan-41f10caa/issues/27)** — the code-level adapter already exists (`SecretManager`, `docs/secrets.md`); what's deferred is the real AWS account, a least-privilege IAM role, and a rotation policy behind it.
+- **[Secrets management (production cutover)](https://github.com/NP-Assignments-Labs/fde-amiay-narayan-41f10caa/issues/27)** — the code-level adapter (`SecretManager`, `docs/secrets.md`) and the CDK stack's least-privilege IAM role + placeholder Secrets Manager entries both now exist; what's still deferred is the real AWS account, real key values, and a rotation policy.
 - **[Live cutover](https://github.com/NP-Assignments-Labs/fde-amiay-narayan-41f10caa/issues/28)** — actually standing up the provisioned infrastructure, pointing traffic at it, and a rollback plan.

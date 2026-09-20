@@ -205,3 +205,36 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  infra:
+    # Synthesizes the CDK stack (infra/, issue #23) and runs its assertion tests
+    # against the real CloudFormation output — no AWS credentials needed, since this
+    # never deploys anything (issue #28's live cutover is deliberately deferred; see
+    # infra/README.md).
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        run: |
+          .venv/bin/pip install ruff
+          .venv/bin/ruff check --select E,F,I,UP,B --line-length 100 .
+
+      - name: Synthesize + test
+        env:
+          CDK_DEFAULT_ACCOUNT: "123456789012"
+          CDK_DEFAULT_REGION: us-east-1
+        run: .venv/bin/python -m pytest tests/ -v

@@ -145,3 +145,97 @@ health checks, auth, rate limiting, secrets management cutover, live cutover —
 "Production deployment (deferred)" section) rather than left as prose here; none of those six are
 `ready-for-agent` (deliberately — deferred/out-of-scope future work, not part of this submission's
 build), so they're intentionally not added as further rows in this ledger.
+
+## AWS deployment topology (`infra/`, issue #23)
+
+The dashed PROD panel in the diagram above is now real, runnable code — `infra/`'s AWS CDK
+(Python) app provisions exactly this topology; `cdk deploy` stands it up, `cdk destroy` tears it
+back down. It is **not deployed** for this submission (issue #28, deliberately deferred — see the
+README's "Production deployment (deferred)" section); this diagram is what that code builds, not
+a description of something currently running. See `infra/README.md` for deploy steps and the
+hardening notes (what a real production pass would change beyond this reference shape).
+
+```mermaid
+flowchart TB
+    USER["Browser"]:::external
+
+    subgraph AWS["AWS account/region"]
+        CF["CloudFront distribution<br/>(HTTPS, single public entry point)"]:::built
+
+        subgraph VPC["VPC"]
+            subgraph PUBLIC["Public subnets"]
+                ALB["Application Load Balancer<br/>(HTTP listener)"]:::built
+                NAT["NAT Gateway"]:::store
+            end
+
+            subgraph PRIVATE_APP["Private subnets — app tier"]
+                API["ECS Fargate service: api<br/>(FastAPI, desired count 1)"]:::built
+                WORKER["ECS Fargate service: worker<br/>(Celery, desired count 1)"]:::built
+            end
+
+            subgraph PRIVATE_DATA["Private isolated subnets — data tier"]
+                RDS["RDS Postgres 16<br/>(pgvector extension)"]:::store
+                REDIS["ElastiCache Redis<br/>(Celery broker/result backend)"]:::store
+            end
+        end
+
+        S3FRONTEND["S3: frontend static assets<br/>(Vite build output, via OAC)"]:::store
+        S3DOCS["S3: uploaded documents<br/>(ObjectStorage backend, via VPC gateway endpoint)"]:::store
+        SECRETS["Secrets Manager<br/>(4 provider API keys + RDS credentials)"]:::store
+        IAMROLE["ECS task IAM role<br/>(least-privilege: read the 4 named secrets,<br/>read the RDS secret, read/write the documents bucket)"]:::store
+        CW["CloudWatch Logs<br/>(api + worker container logs)"]:::store
+    end
+
+    EXT["Anthropic / OpenAI / Google / Cohere APIs<br/>+ Hugging Face Hub (local embedding model)"]:::external
+
+    USER -->|HTTPS| CF
+    CF -->|"default behavior"| S3FRONTEND
+    CF -->|"/documents*, /chat/*, /health,<br/>/docs*, /redoc, /openapi.json"| ALB
+    ALB --> API
+
+    API -.->|assumes| IAMROLE
+    WORKER -.->|assumes| IAMROLE
+    IAMROLE -.-> S3DOCS
+    IAMROLE -.-> SECRETS
+
+    API --> RDS
+    WORKER --> RDS
+    API --> REDIS
+    WORKER --> REDIS
+    API -.->|"gateway endpoint, no NAT"| S3DOCS
+    WORKER -.->|"gateway endpoint, no NAT"| S3DOCS
+    API --> NAT
+    WORKER --> NAT
+    NAT --> SECRETS
+    NAT -->|internet| EXT
+    API --> CW
+    WORKER --> CW
+
+    classDef built fill:#e9f5ef,stroke:#1f7a5c,stroke-width:1.5px,color:#12362a;
+    classDef store fill:#eef1f4,stroke:#1b2430,stroke-width:1.5px,color:#1b2430;
+    classDef external fill:#eaf0f7,stroke:#35577f,stroke-width:1.5px,color:#1d3350;
+```
+
+**Reading the diagram**: everything a browser talks to goes through one CloudFront distribution —
+its default cache behavior serves the built frontend straight from S3 (via Origin Access Control,
+no public bucket), while a fixed set of path patterns matching FastAPI's own routes
+(`/documents*`, `/chat/*`, `/health`, `/docs*`, `/redoc`, `/openapi.json`) are forwarded instead to
+the ALB in front of the `api` ECS service. This keeps the whole app on one origin as far as the
+browser is concerned, so the frontend's `VITE_API_BASE_URL` can stay empty/relative rather than
+needing the ALB's DNS name baked in at build time. The `worker` service has no load balancer — it
+has no HTTP interface, it only consumes Celery tasks via Redis. Both ECS services share one IAM
+task role, scoped to exactly what the app needs: the four named provider secrets (not a broad
+`secretsmanager:*`), the RDS-generated credentials secret, and the documents S3 bucket. RDS and
+ElastiCache sit in private isolated subnets (no route to the internet at all, in or out); the app
+tier reaches them directly over the VPC. Outbound calls to the LLM/embedding/rerank provider APIs
+and Hugging Face Hub (for the local embedding model download) go through the NAT gateway, the only
+path out of the private app subnets — S3 traffic bypasses it via a free gateway VPC endpoint
+instead, since S3 is the one dependency the app talks to heavily enough for that to matter.
+
+**What's deliberately reference-shaped, not production-hardened** (see `infra/README.md` for the
+full list): a single NAT gateway rather than one per AZ, single-AZ RDS and a single-node
+ElastiCache cluster rather than Multi-AZ/replicated, `RemovalPolicy.DESTROY` on both S3 buckets and
+the database (so `cdk destroy` leaves nothing behind, since this stack is never actually deployed),
+and a plain-HTTP ALB listener with no ACM certificate or custom domain (CloudFront-to-viewer is
+still HTTPS; only the CloudFront-to-ALB hop inside AWS is HTTP). None of these are hard to change —
+they're the "smallest deploy that actually works end-to-end" cut, not a ceiling.
