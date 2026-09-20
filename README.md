@@ -27,53 +27,6 @@ Provider credentials are resolved through a `SecretManager` adapter first (`loca
 gitignored `backend/.secrets` file, or `aws` for AWS Secrets Manager), falling back to the
 `.env`/environment values above when a key isn't set there — see [`docs/secrets.md`](docs/secrets.md).
 
-### Backend development (without Docker)
-
-Requires `postgres`, `redis`, and `minio` running (`docker compose up -d postgres redis minio`).
-
-```
-cd backend
-uv sync --group dev
-uv run alembic upgrade head
-uv run pytest -q                                    # fast suite (fakes only, no live services)
-uv run uvicorn app.main:app --reload
-```
-
-The fast suite alone won't show 100% coverage — the real provider adapters' network-client code
-paths (e.g. `S3ObjectStorage` actually talking to MinIO) are only exercised by the
-`integration`-marked tests, which need `postgres`/`minio` running. Together they're 100%,
-enforced via `fail_under = 100` in `pyproject.toml`:
-
-```
-uv run pytest -m "integration or not integration" --cov=app --cov-report=term-missing
-```
-
-### Frontend development (without Docker)
-
-Requires Node ≥ 22 (see `frontend/.nvmrc`).
-
-```
-cd frontend
-npm install --legacy-peer-deps
-npm run dev
-npm run test:coverage  # 100% statements/branches/functions/lines, enforced via vite.config.ts
-```
-
-### Evaluation harness
-
-Measures retrieval hit-rate and LLM-as-judge faithfulness/relevancy against a small golden Q&A
-set, run through both the vector-only and vector+rerank pipeline modes so the reranker's
-contribution is a measured number, not an assumption (`backend/app/eval/`).
-
-```
-cd backend
-uv run python -m app.eval
-```
-
-Also runs as its own CI job on every push, publishing the report to the job summary — but only
-when `GOOGLE_API_KEY`/`COHERE_API_KEY` are configured as repo secrets (skipped, not failed,
-otherwise; that's the current state of this repo).
-
 ## Architecture overview
 
 ```mermaid
