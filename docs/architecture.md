@@ -1,23 +1,11 @@
 # System Architecture
 
-Full planned architecture of **Chat With Your Docs**, as frozen in issue #1 and decomposed
-across tickets 1–16. This reflects the whole plan, not just what's built so far — see the
-[status legend](#status-legend) and [ticket ledger](#ticket-ledger) below for what's actually
-shipped.
+**Chat With Your Docs** is a RAG assistant: upload PDFs, text, or Markdown files, ask questions
+about them, and get answers grounded in your own documents with citations back to the source
+passage. This document walks through the diagram below — what each piece is and why it's there —
+then does the same for the AWS deployment target.
 
-An interactive version of this same diagram (with hover-friendly layout) is also available as a
-published artifact from this session, if you have that link.
-
-## Status legend
-
-| Style | Meaning |
-| --- | --- |
-| 🟢 solid green | **Built** — tickets 1–14, closed |
-| 🟠 dashed amber | **Planned** — tickets 15, 16, `ready-for-agent`, not yet built |
-| 🔵 blue | External AI provider (Anthropic, OpenAI) |
-| ⬜ grey | Data store / infrastructure |
-
-## Diagram
+## System diagram
 
 ```mermaid
 flowchart TB
@@ -108,52 +96,56 @@ flowchart TB
     classDef store fill:#eef1f4,stroke:#1b2430,stroke-width:1.5px,color:#1b2430;
 ```
 
-Two request-time lanes hang off the API: an **asynchronous ingest path** (API → Redis → Celery
-worker → object storage / pgvector / embeddings) and a **synchronous ask path** (API → retrieval
-& answer, in the same process → pgvector / LLM / reranker). Supporting systems (observability,
-evaluation, CI/CD) surround the request path but don't sit on it. The AWS panel is the documented
-production target — dashed throughout, because none of it is deployed.
+Green = built. Amber dashed = planned, not built. Blue = an external AI vendor. Grey = a data
+store.
 
-## Ticket ledger
+### What each box is, and why it's there
 
-| # | GH issue | Ticket | Status | Diagram area |
-| - | - | - | - | - |
-| 1 | #2 | Project scaffolding (prefactoring) | 🟢 Built | Repo, Docker Compose, CI |
-| 2 | #3 | Upload → background ingest → status tracking | 🟢 Built | Client, API, Worker, Data stores |
-| 3 | #4 | Single-turn Q&A over ingested documents | 🟢 Built | Client, API, Retrieval & Answer, LLM |
-| 4 | #5 | Citations & source panel | 🟢 Built | Client, Retrieval & Answer |
-| 5 | #6 | Answer-time guardrails | 🟢 Built | API, Retrieval & Answer |
-| 6 | #7 | Document deletion | 🟢 Built | API, Data stores |
-| 7 | #8 | Multi-turn conversation + session persistence + empty states | 🟢 Built | Client, API, Data stores |
-| 8 | #9 | Document-scoped retrieval filtering | 🟢 Built | Client, Retrieval & Answer |
-| 9 | #10 | Structure-aware chunking upgrade | 🟢 Built | Worker |
-| 10 | #11 | Hybrid retrieval (vector + keyword) | 🟢 Built | Retrieval & Answer, Data stores |
-| 11 | #12 | Optional reranker toggle | 🟢 Built | Retrieval & Answer, AI providers |
-| 12 | #13 | Evaluation harness | 🟢 Built | Evaluation & Quality |
-| 13 | #14 | In-app trace panel + structured logging | 🟢 Built | Client, Observability |
-| 14 | #15 | CI: add eval harness job | 🟢 Built | CI/CD, Evaluation & Quality |
-| 15 | #16 | Deployment follow-up backlog | 🟢 Built | Production target (AWS) |
-| 16 | #17 | Final README + submission polish | 🟠 Planned | — |
+- **Client** — the React SPA. The only thing a user touches: upload, chat, citations, document
+  scoping, and a trace panel for inspecting how an answer was produced. Talks to the API only over
+  HTTPS with a session cookie — no separate client-side state that could drift from the server.
+- **API (FastAPI)** — the single entry point for both uploads and questions. Owns the session
+  cookie (this app's only identity model — no accounts) and the guardrails that decide whether a
+  question gets an LLM call or a deterministic refusal. Everything the client can do goes through
+  here; there's no second door into the system.
+- **Redis** — the queue between the API and the worker. Exists for one reason: so a large PDF
+  upload doesn't hold the HTTP connection open. The API enqueues a task and returns immediately.
+- **Worker (Celery)** — a separate process that does the actual ingestion work: parse → chunk →
+  embed → index. Runs out-of-request so ingestion time (seconds to tens of seconds) never blocks
+  the upload response.
+- **Retrieval & Answer** — the pipeline behind every question: embed the query, retrieve
+  (hybrid vector + keyword), optionally rerank, generate an answer, attach citations. Runs
+  in-process, not through Redis/the worker, because it's one bounded call — a task queue would
+  only add latency here, not remove blocking.
+- **Data stores** — Postgres with the `pgvector` extension holds documents, chunks, embeddings,
+  and messages in one database (not a separate vector DB); object storage (MinIO locally, S3 in
+  production) holds the raw uploaded files. One relational store instead of two systems that would
+  otherwise need to stay in sync.
+- **AI providers** — LLM, embeddings, and an optional reranker, each behind a small adapter
+  interface. The concrete vendor (Anthropic vs. Google, local vs. OpenAI, Cohere) is a config
+  choice, not a code change — this is why the app can run fully offline/key-free by default.
+- **Supporting systems** — structured logging, the in-app trace panel, and the evaluation harness
+  (retrieval hit-rate + LLM-as-judge faithfulness) sit alongside the request path, not on it — none
+  of them run on the way to answering a question. CI runs lint, tests, and the eval harness on
+  every push.
+- **Production target (AWS)** — dashed, because it isn't deployed. The next section is what
+  actually provisions it.
 
-16 tickets · 15 built · 1 planned. Zero open `needs-triage`/`needs-info` items — every ticket
-above is `ready-for-agent` in the tracker. (Three further tickets, #18 API documentation, #19
-document failure taxonomy + retry, and #22 secret manager adapter, were opened after this plan
-was frozen and aren't reflected in the diagram/ledger above — all three are since built.)
+### The two request-time paths
 
-Ticket 15/#16's deferred production work itself is now tracked as six real, linked issues (IaC,
-health checks, auth, rate limiting, secrets management cutover, live cutover — see the README's
-"Production deployment (deferred)" section) rather than left as prose here; none of those six are
-`ready-for-agent` (deliberately — deferred/out-of-scope future work, not part of this submission's
-build), so they're intentionally not added as further rows in this ledger.
+- **Ingest (async)**: upload → API enqueues on Redis → worker parses/chunks/embeds/indexes.
+  Asynchronous so a slow upload never times out the request.
+- **Ask (sync)**: question → API invokes retrieval & answer in-process → hybrid search → optional
+  rerank → LLM call → cited answer. Synchronous because it's one bounded round trip, not a
+  background job.
 
-## AWS deployment topology (`infra/`, issue #23)
+## AWS deployment topology
 
-The dashed PROD panel in the diagram above is now real, runnable code — `infra/`'s AWS CDK
-(Python) app provisions exactly this topology; `cdk deploy` stands it up, `cdk destroy` tears it
-back down. It is **not deployed** for this submission (issue #28, deliberately deferred — see the
-README's "Production deployment (deferred)" section); this diagram is what that code builds, not
-a description of something currently running. See `infra/README.md` for deploy steps and the
-hardening notes (what a real production pass would change beyond this reference shape).
+`infra/` is a working AWS CDK (Python) app that provisions the diagram below for real —
+`cdk deploy` stands it up, `cdk destroy` tears it down. It has never been pointed at a live
+account: this app runs locally only for this submission (see the README's "Production deployment
+(deferred)" section). What follows is what that code builds, not a description of something
+currently running.
 
 ```mermaid
 flowchart TB
@@ -216,26 +208,46 @@ flowchart TB
     classDef external fill:#eaf0f7,stroke:#35577f,stroke-width:1.5px,color:#1d3350;
 ```
 
-**Reading the diagram**: everything a browser talks to goes through one CloudFront distribution —
-its default cache behavior serves the built frontend straight from S3 (via Origin Access Control,
-no public bucket), while a fixed set of path patterns matching FastAPI's own routes
-(`/documents*`, `/chat/*`, `/health`, `/docs*`, `/redoc`, `/openapi.json`) are forwarded instead to
-the ALB in front of the `api` ECS service. This keeps the whole app on one origin as far as the
-browser is concerned, so the frontend's `VITE_API_BASE_URL` can stay empty/relative rather than
-needing the ALB's DNS name baked in at build time. The `worker` service has no load balancer — it
-has no HTTP interface, it only consumes Celery tasks via Redis. Both ECS services share one IAM
-task role, scoped to exactly what the app needs: the four named provider secrets (not a broad
-`secretsmanager:*`), the RDS-generated credentials secret, and the documents S3 bucket. RDS and
-ElastiCache sit in private isolated subnets (no route to the internet at all, in or out); the app
-tier reaches them directly over the VPC. Outbound calls to the LLM/embedding/rerank provider APIs
-and Hugging Face Hub (for the local embedding model download) go through the NAT gateway, the only
-path out of the private app subnets — S3 traffic bypasses it via a free gateway VPC endpoint
-instead, since S3 is the one dependency the app talks to heavily enough for that to matter.
+### What each box is, and why it's there
 
-**What's deliberately reference-shaped, not production-hardened** (see `infra/README.md` for the
-full list): a single NAT gateway rather than one per AZ, single-AZ RDS and a single-node
-ElastiCache cluster rather than Multi-AZ/replicated, `RemovalPolicy.DESTROY` on both S3 buckets and
-the database (so `cdk destroy` leaves nothing behind, since this stack is never actually deployed),
-and a plain-HTTP ALB listener with no ACM certificate or custom domain (CloudFront-to-viewer is
-still HTTPS; only the CloudFront-to-ALB hop inside AWS is HTTP). None of these are hard to change —
-they're the "smallest deploy that actually works end-to-end" cut, not a ceiling.
+- **CloudFront** — the one public entry point for the whole app, frontend and API both. Keeps the
+  browser on a single origin, so the frontend never needs to know the API's real address at build
+  time.
+- **Application Load Balancer** — routes CloudFront's API-path traffic to the `api` ECS service,
+  and runs the health check ECS uses to decide whether a task is alive and should keep receiving
+  traffic.
+- **NAT Gateway** — the only way out of the private app subnets to the public internet. Used for
+  calls to the LLM/embedding/rerank provider APIs and Hugging Face Hub. S3 traffic deliberately
+  bypasses it (see the gateway endpoint below) since that's the one dependency this app talks to
+  heavily enough for NAT's per-byte cost to matter.
+- **ECS Fargate — api** — the FastAPI process, containerized, no server to patch or manage.
+- **ECS Fargate — worker** — the Celery process. No load balancer: it has no HTTP interface, it
+  only pulls tasks from Redis.
+- **RDS Postgres (pgvector)** — the same database engine as local dev, just managed. Sits in a
+  private isolated subnet with no route to the internet at all, in or out — the app tier reaches
+  it directly over the VPC.
+- **ElastiCache Redis** — managed Redis playing the same broker/result-backend role local Redis
+  plays in `docker compose`.
+- **S3 — frontend static assets** — hosts the built frontend (`frontend/dist`), served through
+  CloudFront rather than run as a container — a static SPA build has no reason to need a running
+  process.
+- **S3 — uploaded documents** — the production `ObjectStorage` backend, the same role MinIO plays
+  locally. Reached via a free VPC gateway endpoint instead of the NAT gateway.
+- **Secrets Manager** — holds the four provider API keys and the RDS-generated credentials, read
+  by this app's own `SecretManager` adapter (`AWSSecretManager`, see `docs/secrets.md`) rather
+  than baked into the task definition.
+- **ECS task IAM role** — one role, shared by both services, scoped to exactly what they need:
+  those four named secrets (not a broad `secretsmanager:*`), the RDS secret, and the documents
+  bucket. Nothing wider.
+- **CloudWatch Logs** — where both ECS services' container logs land, so a crashed task's cause is
+  visible without shelling in.
+
+### What's reference-shaped here, not production-hardened
+
+A single NAT gateway (not one per AZ), single-AZ RDS, a single-node ElastiCache cluster (no
+Multi-AZ/replication), `RemovalPolicy.DESTROY` on both S3 buckets and the database (so
+`cdk destroy` leaves nothing behind — this stack is never actually deployed), and a plain-HTTP ALB
+listener with no ACM certificate or custom domain (CloudFront-to-viewer is still HTTPS; only the
+CloudFront-to-ALB hop inside AWS is not). None of these are hard to change — they're what a
+reference stack that's never actually deployed needs, not a ceiling. Full list and reasoning:
+[`infra/README.md`](../infra/README.md).

@@ -1,7 +1,7 @@
 # infra — AWS CDK reference architecture (issue #23)
 
 Provisions the AWS deployment target described in `docs/architecture.md`'s ["AWS deployment
-topology"](../docs/architecture.md#aws-deployment-topology-infra-issue-23) section: VPC, ECS
+topology"](../docs/architecture.md#aws-deployment-topology) section: VPC, ECS
 Fargate (`api` + `worker`), RDS Postgres with `pgvector`, ElastiCache Redis, S3 (uploaded
 documents + frontend static hosting), CloudFront, and Secrets Manager.
 
