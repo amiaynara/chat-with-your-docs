@@ -7,6 +7,27 @@ already sits behind a swappable adapter interface (`EmbeddingProvider`, `LLMProv
 shape here: a `SecretManager` adapter (`backend/app/adapters/secrets.py`), selected by one config
 value, with two implementations.
 
+## `backend/.env` vs. `backend/.secrets` — the short answer
+
+Two different, gitignored, locally-created files, read by two different mechanisms, for two
+different purposes:
+
+| | `backend/.env` | `backend/.secrets` |
+|---|---|---|
+| **Read by** | `pydantic-settings`, automatically, for *every* config field `Settings` (`app/config.py`) declares | `LocalSecretManager` (`app/adapters/secrets.py`), explicitly, only when asked for a name |
+| **Holds** | all config — database/Redis URLs, provider toggles (`LLM_PROVIDER`, `EMBEDDING_PROVIDER`, …), tuning knobs (`CHUNK_SIZE_CHARS`, …), *and* the four provider API keys as a fallback | only the four provider API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `COHERE_API_KEY`) |
+| **Format** | `KEY=value`, one process-wide environment variable per line — the standard dotenv convention every other tool in this stack also reads | `KEY=value`, one entry per line — deliberately the same shape, but parsed by our own code (`LocalSecretManager._load`), not `pydantic-settings` |
+| **Priority when both set** | loses — used as the fallback | wins — checked first (see "Resolution order" below) |
+| **What it models** | "the config this process starts with" | "a local stand-in for a real secret store" — same shape `AWSSecretManager` has when `SECRET_MANAGER=aws` points at AWS Secrets Manager instead |
+| **Created by** | copying `backend/.env.example` | you, by hand — `backend/.secrets` has no example/template file, since (unlike `.env`) it's meant to hold nothing but real values |
+
+In one sentence: **`.env` is this process's whole configuration, loaded implicitly; `.secrets` is
+just the four provider credentials, loaded explicitly by an adapter that could just as easily be
+pointed at a real cloud secret store instead** — same protocol (`SecretManager.get_secret(name)`)
+either way, so the app can't tell the difference. Neither file is committed (`.gitignore`); if a
+key is set in both, `.secrets` (or `AWSSecretManager`, if `SECRET_MANAGER=aws`) always wins — see
+"Resolution order" below for exactly how.
+
 ## The two implementations
 
 | | `LocalSecretManager` | `AWSSecretManager` |
