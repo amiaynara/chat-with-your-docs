@@ -1,3 +1,4 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -5,6 +6,18 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5433/app"
+    # Alternative to DATABASE_URL: discrete connection parts. infra/ (issue #23) injects
+    # these instead of one templated DATABASE_URL — DB_HOST/DB_PORT/DB_NAME as plain ECS
+    # task-definition env vars, DB_USER/DB_PASSWORD from the RDS-managed Secrets Manager
+    # secret via ecs.Secret.from_secrets_manager — since Secrets Manager/ECS has no way
+    # to interpolate a secret's fields into one connection-string env var. When DB_HOST
+    # is set, database_url is assembled from these instead of the default above; see
+    # _assemble_database_url_from_parts.
+    db_host: str = ""
+    db_port: int = 5432
+    db_name: str = "app"
+    db_user: str = ""
+    db_password: str = ""
     redis_url: str = "redis://localhost:6379/0"
 
     celery_task_always_eager: bool = False
@@ -121,6 +134,15 @@ class Settings(BaseSettings):
     local_secrets_file: str = ".secrets"
     # AWSSecretManager's AWS region. Only read when secret_manager="aws".
     aws_secrets_region: str = "us-east-1"
+
+    @model_validator(mode="after")
+    def _assemble_database_url_from_parts(self) -> "Settings":
+        if self.db_host:
+            self.database_url = (
+                f"postgresql+psycopg://{self.db_user}:{self.db_password}"
+                f"@{self.db_host}:{self.db_port}/{self.db_name}"
+            )
+        return self
 
 
 settings = Settings()

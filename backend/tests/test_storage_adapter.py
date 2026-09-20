@@ -37,6 +37,54 @@ def _make_storage(bucket: str | None = None) -> S3ObjectStorage:
     )
 
 
+class _FakeBotoClient:
+    def head_bucket(self, **kwargs):
+        pass
+
+
+def test_boto_client_omits_endpoint_and_credentials_when_not_provided(monkeypatch):
+    """Real AWS S3 in production (infra/, issue #23): no custom endpoint, and the ECS
+    task's IAM role — not static keys — supplies credentials via boto3's default
+    chain. Passing empty-string credentials would be treated as literal (invalid)
+    values rather than "fall back to the chain", so the client call must omit the
+    kwargs entirely, not just pass them empty.
+    """
+    captured = {}
+
+    def fake_client(service_name, **kwargs):
+        captured.update(kwargs)
+        return _FakeBotoClient()
+
+    monkeypatch.setattr("app.adapters.storage.boto3.client", fake_client)
+
+    S3ObjectStorage(bucket="my-bucket")
+
+    assert "endpoint_url" not in captured
+    assert "aws_access_key_id" not in captured
+    assert "aws_secret_access_key" not in captured
+
+
+def test_boto_client_includes_endpoint_and_credentials_when_provided(monkeypatch):
+    captured = {}
+
+    def fake_client(service_name, **kwargs):
+        captured.update(kwargs)
+        return _FakeBotoClient()
+
+    monkeypatch.setattr("app.adapters.storage.boto3.client", fake_client)
+
+    S3ObjectStorage(
+        bucket="my-bucket",
+        endpoint_url="http://localhost:9000",
+        access_key="minioadmin",
+        secret_key="minioadmin",
+    )
+
+    assert captured["endpoint_url"] == "http://localhost:9000"
+    assert captured["aws_access_key_id"] == "minioadmin"
+    assert captured["aws_secret_access_key"] == "minioadmin"
+
+
 def test_classify_client_error_maps_a_fail_fast_code_to_permanent():
     error = ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
 

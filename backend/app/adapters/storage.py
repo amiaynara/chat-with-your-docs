@@ -41,29 +41,39 @@ class S3ObjectStorage:
     """S3-compatible object storage (MinIO locally, real AWS S3 in production).
 
     The endpoint/credentials are the only production difference — this same
-    client works against either without code changes.
+    client works against either without code changes. `endpoint_url`/`access_key`/
+    `secret_key` are optional: MinIO needs all three (a custom endpoint, no IAM role
+    to fall back on); real AWS S3 needs neither — infra/ (issue #23) grants the ECS
+    task role S3 access directly, so boto3's default credential chain resolves it and
+    the real AWS S3 endpoint is used automatically. Leave whichever of the three
+    unset/empty for that case, rather than passing empty-string credentials, which
+    boto3 would treat as literal (invalid) values instead of "use the default chain."
     """
 
     def __init__(
         self,
-        endpoint_url: str,
-        access_key: str,
-        secret_key: str,
         bucket: str,
+        endpoint_url: str | None = None,
+        access_key: str | None = None,
+        secret_key: str | None = None,
         timeout_seconds: float = 30.0,
     ) -> None:
         self._bucket = bucket
+        client_kwargs: dict[str, str] = {}
+        if endpoint_url:
+            client_kwargs["endpoint_url"] = endpoint_url
+        if access_key and secret_key:
+            client_kwargs["aws_access_key_id"] = access_key
+            client_kwargs["aws_secret_access_key"] = secret_key
         self._client = boto3.client(
             "s3",
-            endpoint_url=endpoint_url,
-            aws_access_key_id=access_key,
-            aws_secret_access_key=secret_key,
             config=Config(
                 signature_version="s3v4",
                 retries={"max_attempts": 0},
                 connect_timeout=timeout_seconds,
                 read_timeout=timeout_seconds,
             ),
+            **client_kwargs,
         )
         self._ensure_bucket()
 
