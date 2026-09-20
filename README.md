@@ -164,15 +164,23 @@ pick whichever actually mattered most and say why in your own words:_
 <!-- Draft from this session's actual process. Rewrite in your own words before submitting —
 the brief asks for your thoughts, not an LLM's. -->
 
-Built with Claude Code, spec-first: every feature started as a GitHub issue with acceptance
-criteria, not a chat prompt. Each ticket: implement test-first, run lint/type-check/tests, then a
-two-axis review (repo standards + code smells; separately, spec compliance) before committing.
-
-Checked AI output rather than trusting it: ran `cdk synth` against the generated infrastructure
-code and fixed the real warnings it produced (unencrypted RDS, missing circuit breakers) before
-writing tests against it. Found a worker container that had been crash-looping for days on a
-missing dependency by actually starting the stack, not just running the test suite. Verified the
-full upload → ingest → ask → cited-answer flow against a live LLM call.
+- **Brief → spec**: ran the `grill-with-docs` skill against the client brief — an interview-style
+  skill that grills a plan until it's sharp, writing docs as it goes. Turned a short brief into a
+  full spec (problem statement, user stories, implementation/testing decisions, explicit
+  out-of-scope), published to the tracker as [issue #1](https://github.com/NP-Assignments-Labs/fde-amiay-narayan-41f10caa/issues/1).
+- **Spec → tickets**: ran `to-tickets` to decompose that spec into vertical-slice tickets, each
+  with acceptance criteria and blocking edges. Every technology choice and trade-off in those
+  tickets — pgvector vs. a dedicated vector DB, the adapter pattern, hybrid retrieval, async
+  ingestion, session-cookie identity, and so on — was brainstormed and decided by me, from prior
+  engineering experience. AI wrote the ticket text; I made the calls it's writing up.
+- **Tickets → code**: automated the implementation and testing loop from there — each ticket run
+  test-first (red → green), lint/type-check/full suite, then a two-axis review (repo standards +
+  code smells; separately, spec compliance) before commit.
+- **Checked output rather than trusting it**: ran `cdk synth` against the generated infrastructure
+  code and fixed the real warnings it produced (unencrypted RDS, missing circuit breakers) before
+  writing tests against it. Found a worker container that had been crash-looping for days on a
+  missing dependency by actually starting the stack, not just running the test suite. Verified the
+  full upload → ingest → ask → cited-answer flow against a live LLM call.
 
 ## What I'd do differently with more time
 
