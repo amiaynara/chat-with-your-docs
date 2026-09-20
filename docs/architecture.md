@@ -161,8 +161,8 @@ flowchart TB
             end
 
             subgraph PRIVATE_APP["Private subnets — app tier"]
-                API["ECS Fargate service: api<br/>(FastAPI, desired count 1)"]:::built
-                WORKER["ECS Fargate service: worker<br/>(Celery, desired count 1)"]:::built
+                API["ECS Fargate: api<br/>(FastAPI, desired count 1)"]:::built
+                WORKER["ECS Fargate: worker<br/>(Celery, desired count 1)"]:::built
             end
 
             subgraph PRIVATE_DATA["Private isolated subnets — data tier"]
@@ -172,9 +172,8 @@ flowchart TB
         end
 
         S3FRONTEND["S3: frontend static assets<br/>(Vite build output, via OAC)"]:::store
-        S3DOCS["S3: uploaded documents<br/>(ObjectStorage backend, via VPC gateway endpoint)"]:::store
+        S3DOCS["S3: uploaded documents<br/>(ObjectStorage backend)"]:::store
         SECRETS["Secrets Manager<br/>(4 provider API keys + RDS credentials)"]:::store
-        IAMROLE["ECS task IAM role<br/>(least-privilege: read the 4 named secrets,<br/>read the RDS secret, read/write the documents bucket)"]:::store
         CW["CloudWatch Logs<br/>(api + worker container logs)"]:::store
     end
 
@@ -185,28 +184,24 @@ flowchart TB
     CF -->|"/documents*, /chat/*, /health,<br/>/docs*, /redoc, /openapi.json"| ALB
     ALB --> API
 
-    API -.->|assumes| IAMROLE
-    WORKER -.->|assumes| IAMROLE
-    IAMROLE -.-> S3DOCS
-    IAMROLE -.-> SECRETS
-
-    API --> RDS
-    WORKER --> RDS
-    API --> REDIS
-    WORKER --> REDIS
-    API -.->|"gateway endpoint, no NAT"| S3DOCS
-    WORKER -.->|"gateway endpoint, no NAT"| S3DOCS
-    API --> NAT
-    WORKER --> NAT
+    PRIVATE_APP --> RDS
+    PRIVATE_APP --> REDIS
+    PRIVATE_APP -.->|"gateway endpoint<br/>(bypasses NAT)"| S3DOCS
+    PRIVATE_APP --> NAT
+    PRIVATE_APP --> CW
     NAT --> SECRETS
     NAT -->|internet| EXT
-    API --> CW
-    WORKER --> CW
 
     classDef built fill:#e9f5ef,stroke:#1f7a5c,stroke-width:1.5px,color:#12362a;
     classDef store fill:#eef1f4,stroke:#1b2430,stroke-width:1.5px,color:#1b2430;
     classDef external fill:#eaf0f7,stroke:#35577f,stroke-width:1.5px,color:#1d3350;
 ```
+
+11 edges instead of 20 — `api` and `worker` share every downstream dependency except ALB traffic
+(worker has none), so those shared edges are drawn once, from the app-tier subnet boundary, rather
+than duplicated per service. The IAM role is noted on the subnet it applies to instead of drawn as
+a separate box with its own arrows — a permission grant isn't a data flow, and drawing it as one
+was most of what made this diagram noisy.
 
 ### What each box is, and why it's there
 
@@ -222,7 +217,10 @@ flowchart TB
   heavily enough for NAT's per-byte cost to matter.
 - **ECS Fargate — api** — the FastAPI process, containerized, no server to patch or manage.
 - **ECS Fargate — worker** — the Celery process. No load balancer: it has no HTTP interface, it
-  only pulls tasks from Redis.
+  only pulls tasks from Redis. Both services share one IAM role, scoped to exactly what they need
+  — those four named secrets (not a broad `secretsmanager:*`), the RDS secret, and the documents
+  bucket, nothing wider — which is why it's noted on the subnet rather than drawn as its own box
+  with its own arrows.
 - **RDS Postgres (pgvector)** — the same database engine as local dev, just managed. Sits in a
   private isolated subnet with no route to the internet at all, in or out — the app tier reaches
   it directly over the VPC.
@@ -235,10 +233,8 @@ flowchart TB
   locally. Reached via a free VPC gateway endpoint instead of the NAT gateway.
 - **Secrets Manager** — holds the four provider API keys and the RDS-generated credentials, read
   by this app's own `SecretManager` adapter (`AWSSecretManager`, see `docs/secrets.md`) rather
-  than baked into the task definition.
-- **ECS task IAM role** — one role, shared by both services, scoped to exactly what they need:
-  those four named secrets (not a broad `secretsmanager:*`), the RDS secret, and the documents
-  bucket. Nothing wider.
+  than baked into the task definition. Reached over the NAT gateway (no VPC interface endpoint for
+  Secrets Manager here — one more thing a hardening pass would add).
 - **CloudWatch Logs** — where both ECS services' container logs land, so a crashed task's cause is
   visible without shelling in.
 
