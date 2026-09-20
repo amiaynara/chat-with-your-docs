@@ -1,7 +1,7 @@
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.models import Chunk, Document, DocumentErrorCategory, DocumentStatus, Message, MessageRole
@@ -215,3 +215,7 @@ class MessageRepository:
         self._db.commit()
         self._db.refresh(message)
         return message
+
+    def delete_for_session(self, session_id: str) -> None:
+        self._db.execute(delete(Message).where(Message.session_id == session_id))
+        self._db.commit()

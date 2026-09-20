@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as chatApi from './api/chat'
 import * as documentsApi from './api/documents'
+import * as sessionApi from './api/session'
 import App from './App'
 
 describe('App', () => {
@@ -248,5 +249,38 @@ describe('App', () => {
     await userEvent.click(screen.getByRole('button', { name: /^ask$/i }))
 
     expect(askSpy).toHaveBeenCalledWith('A question?', [])
+  })
+
+  it('resets the session: calls the API and clears the document list', async () => {
+    vi.spyOn(documentsApi, 'listDocuments').mockResolvedValue([
+      {
+        id: '1',
+        filename: 'a.txt',
+        format: 'txt',
+        status: 'ready',
+        error_reason: null,
+        error_category: null,
+        created_at: new Date().toISOString(),
+      },
+    ])
+    const resetSpy = vi.spyOn(sessionApi, 'resetSession').mockResolvedValue(undefined)
+
+    render(<App />)
+    await screen.findByText('a.txt')
+
+    await userEvent.click(screen.getByRole('button', { name: /new session/i }))
+
+    expect(resetSpy).toHaveBeenCalled()
+    expect(screen.queryByText('a.txt')).not.toBeInTheDocument()
+  })
+
+  it('does not crash when resetting the session fails', async () => {
+    vi.spyOn(documentsApi, 'listDocuments').mockResolvedValue([])
+    vi.spyOn(sessionApi, 'resetSession').mockRejectedValue(new Error('network down'))
+
+    render(<App />)
+    await userEvent.click(screen.getByRole('button', { name: /new session/i }))
+
+    expect(await screen.findByText('Chat With Your Docs')).toBeInTheDocument()
   })
 })

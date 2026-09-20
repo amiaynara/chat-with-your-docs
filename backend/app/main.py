@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.adapters.retry import PermanentProviderError, TransientProviderError
-from app.api import chat, documents
+from app.api import chat, documents, session
 
 app = FastAPI(title="Chat With Your Docs")
 
@@ -17,6 +17,7 @@ app.add_middleware(
 
 app.include_router(documents.router)
 app.include_router(chat.router)
+app.include_router(session.router)
 
 
 @app.exception_handler(TransientProviderError)

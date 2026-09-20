@@ -9,6 +9,7 @@ def test_openapi_schema_documents_the_expected_paths_and_tags(client):
     assert "/documents/{document_id}" in paths
     assert "/documents/{document_id}/retry" in paths
     assert "/chat/messages" in paths
+    assert "/session/reset" in paths
 
     assert paths["/documents"]["post"]["tags"] == ["documents"]
     assert paths["/documents"]["get"]["tags"] == ["documents"]
@@ -16,10 +17,11 @@ def test_openapi_schema_documents_the_expected_paths_and_tags(client):
     assert paths["/documents/{document_id}/retry"]["post"]["tags"] == ["documents"]
     assert paths["/chat/messages"]["post"]["tags"] == ["chat"]
     assert paths["/chat/messages"]["get"]["tags"] == ["chat"]
+    assert paths["/session/reset"]["post"]["tags"] == ["session"]
 
-    # Every documents/chat route has a summary — the contract this ticket exists to guarantee,
-    # not just that the paths are present.
-    for path in ("/documents", "/chat/messages"):
+    # Every documents/chat/session route has a summary — the contract this ticket exists to
+    # guarantee, not just that the paths are present.
+    for path in ("/documents", "/chat/messages", "/session/reset"):
         for operation in paths[path].values():
             assert operation.get("summary")
 
