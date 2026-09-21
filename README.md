@@ -64,7 +64,7 @@ decisions](#key-technical-decisions).
 
 Full ticket-by-ticket system diagram: [`docs/architecture.md`](docs/architecture.md). AWS
 deployment topology diagram (VPC, ALB, ECS, RDS, ElastiCache, CloudFront): [same
-file](docs/architecture.md#aws-deployment-topology-infra-issue-23).
+file](docs/architecture.md#aws-deployment-topology).
 
 ## Productionizing on a hyperscaler (AWS)
 
@@ -122,11 +122,12 @@ one relational store with a vector extension, one cache/broker, one blob store.
 
 ## Key technical decisions
 
-_To fill in — one bullet per decision: what was chosen, why. Candidates already touched on above,
-pick whichever actually mattered most and say why in your own words:_
-
+- Using the proper gitflow and standard git branches
+- Every feature/improvement followed proper documentation -> grooming & brainstorming with AI -> implementation.
+- Having proper CI/CD pipeline in place
+    * Github actions
 - Adapter interfaces + dependency injection for every external dependency
-- Hybrid retrieval (vector + keyword), not vector-only
+    * Implementations always change. Instead of coding to implementation, coding has been done to interface. 
 - Structure-aware chunking with an overlap fallback
 - Async ingestion, sync answering
 - Session-cookie identity, no accounts
@@ -139,6 +140,7 @@ pick whichever actually mattered most and say why in your own words:_
 **Followed**
 
 - TDD throughout — tests before implementation, red → green, every module
+    * `155 backend tests, 100% coverage; 64 frontend tests, 100% coverage`
 - Tests at the HTTP API boundary against a real Postgres; only external-network calls faked, no
   mocking of internals
 - 100% test coverage, backend and frontend, enforced in CI
@@ -149,21 +151,8 @@ pick whichever actually mattered most and say why in your own words:_
   resistance)
 - Retrieval filtering (session/document scope) applied inside the query, never as a post-filter
 
-**Skipped, on purpose**
-
-- No live deployment
-- No auth beyond an anonymous session cookie
-- No API rate limiting
-- No token-by-token streaming
-- No vector DB beyond pgvector (a choice, not a gap — see above)
-- Local embedding model reloads on every call instead of being cached per-process — a real,
-  measured ~40s cost, left unfixed until its interaction with Celery's forking workers gets a
-  proper look
-
 ## How I used AI tools in development
 
-<!-- Draft from this session's actual process. Rewrite in your own words before submitting —
-the brief asks for your thoughts, not an LLM's. -->
 
 - **Brief → spec**: ran the `grill-with-docs` skill against the client brief — an interview-style
   skill that grills a plan until it's sharp, writing docs as it goes. Turned a short brief into a
@@ -187,14 +176,29 @@ the brief asks for your thoughts, not an LLM's. -->
 
 <!-- Same caveat — starting list of real gaps, not a substitute for your own priorities. -->
 
-- Fix the embedding model's per-call reload with a process-level cache
-- Add token-by-token response streaming
+- Actually deploy: `infra/`'s CDK stack is written and verified via `cdk synth`, but never run
+  against a real AWS account — no live deployment exists for this submission
+- Build real auth (accounts, multi-tenant isolation) — today it's an anonymous session cookie only
+- Add API rate limiting — no throttling on upload/chat today
+- Add token-by-token response streaming — full-response-at-once today
+- Fix the embedding model's per-call reload with a process-level cache — a real, measured ~40s
+  cost per call, left unfixed until its interaction with Celery's forking workers gets a proper
+  look
+- Revisit pgvector vs. a dedicated vector DB, but only if the corpus outgrew what a single
+  Postgres instance handles well — not a gap today, just the condition under which it'd change
 - Grow the eval harness's golden set; tune chunk size/overlap and the relevance threshold against
   measured data instead of stated hypotheses
-- Build real auth and rate limiting
 - More UI/UX polish on the frontend — built to demonstrate every backend capability, not for
   visual design
 
 ## Screenshots
 
-_To add: upload flow, chat with citations, the trace panel, document management._
+**Chat with citations** — upload, ask, cited answer with sources, and the "New session" control:
+
+![Chat with citations](docs/NewPage-screenrecording.png)
+
+**Backend test suite** — 155 tests, fast + integration:
+
+![Backend test suite](docs/backend-tests.png)
+
+**Screen recording**: [`docs/newpage-screenrecording.mov`](docs/newpage-screenrecording.mov)
